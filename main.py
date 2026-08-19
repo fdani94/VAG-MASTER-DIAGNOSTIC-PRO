@@ -1,6 +1,6 @@
 import sys
 from PySide6.QtWidgets import QApplication
-from appdb import APP_NAME, APP_VERSION, connect_db
+from appdb import APP_NAME, APP_VERSION
 from ui_pro import MainWindow
 
 
@@ -9,8 +9,7 @@ def main():
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(APP_VERSION)
     app.setOrganizationName("VAG MASTER")
-    con = connect_db()
-    window = MainWindow(con)
+    window = MainWindow()
     window.show()
     raise SystemExit(app.exec())
 
