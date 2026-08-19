@@ -14,6 +14,7 @@ from vcds_workshop_pack import install as install_vcds_workshop
 from model_specific_pack import install as install_model_specific
 from model_specific_pack_2 import install as install_model_specific_2
 from battery_visibility_pack import install as install_battery_visibility
+from engine_battery_fix_pack import install as install_engine_battery_fix
 
 # Compatibility hotfix for the current v5 seed data.
 if not hasattr(appdb, "src_diag"):
@@ -47,6 +48,7 @@ def main():
         install_model_specific(con)
         install_model_specific_2(con)
         install_battery_visibility(con)
+        install_engine_battery_fix(con)
     finally:
         con.close()
 
