@@ -8,6 +8,7 @@ from vag_1996_2024_pack import install as install_1996_2024
 from expert_data_pack import install as install_expert_data
 from replacement_calibration_pack import install as install_replacement_calibration
 from service_powertrain_pack import install as install_service_powertrain
+from coding_market_pack import install as install_coding_market
 
 # Compatibility hotfix for the current v5 seed data.
 if not hasattr(appdb, "src_diag"):
@@ -33,6 +34,7 @@ def main():
         install_expert_data(con)
         install_replacement_calibration(con)
         install_service_powertrain(con)
+        install_coding_market(con)
     finally:
         con.close()
 
