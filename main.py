@@ -24,8 +24,13 @@ def main():
 
     con = connect_db()
     try:
+        # 1) Load the common Super Master library.
         install_supermaster(con)
+        # 2) Add/extend the VAG catalog through model year 2024 plus expert records.
         install_1996_2024(con)
+        # 3) Re-run the idempotent mapper so newly-added generations receive
+        #    the common library as well as their exact/conditional records.
+        install_supermaster(con)
     finally:
         con.close()
 
