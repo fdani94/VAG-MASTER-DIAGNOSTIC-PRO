@@ -12,6 +12,7 @@ from coding_market_pack import install as install_coding_market
 from community_coding_pack import install as install_community_coding
 from vcds_workshop_pack import install as install_vcds_workshop
 from model_specific_pack import install as install_model_specific
+from model_specific_pack_2 import install as install_model_specific_2
 
 # Compatibility hotfix for the current v5 seed data.
 if not hasattr(appdb, "src_diag"):
@@ -41,6 +42,7 @@ def main():
         install_community_coding(con)
         install_vcds_workshop(con)
         install_model_specific(con)
+        install_model_specific_2(con)
     finally:
         con.close()
 
