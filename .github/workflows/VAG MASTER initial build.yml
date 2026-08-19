@@ -24,24 +24,60 @@ jobs:
           python -m pip install --upgrade pip
           pip install PySide6==6.11.1
           pip install pyinstaller==6.21.0
+          pip install pillow
+
+      - name: Create KID Diagnostic Windows icon
+        shell: powershell
+        run: |
+          @'
+          from PIL import Image, ImageDraw, ImageFont
+          S=512
+          im=Image.new('RGBA',(S,S),(4,16,31,255))
+          d=ImageDraw.Draw(im)
+          # premium blue circular VAG-style badge
+          d.ellipse((18,18,S-18,S-18), fill=(5,25,48,255), outline=(170,190,210,255), width=18)
+          d.ellipse((36,36,S-36,S-36), outline=(0,155,255,255), width=14)
+          d.ellipse((54,54,S-54,S-54), outline=(0,80,155,255), width=5)
+          # simplified car/diagnostic motif
+          d.rounded_rectangle((105,150,407,255), radius=45, outline=(45,180,255,255), width=12)
+          d.line((150,150,205,105,310,105,362,150), fill=(205,225,240,255), width=12)
+          d.ellipse((125,225,185,285), fill=(2,12,25,255), outline=(0,160,255,255), width=8)
+          d.ellipse((327,225,387,285), fill=(2,12,25,255), outline=(0,160,255,255), width=8)
+          # KID wordmark
+          try:
+              f1=ImageFont.truetype('C:/Windows/Fonts/arialbd.ttf',105)
+              f2=ImageFont.truetype('C:/Windows/Fonts/arialbd.ttf',42)
+          except:
+              f1=f2=None
+          text='KID'
+          box=d.textbbox((0,0),text,font=f1)
+          x=(S-(box[2]-box[0]))//2
+          d.text((x,278),text,font=f1,fill=(235,242,250,255),stroke_width=3,stroke_fill=(0,110,230,255))
+          text2='DIAGNOSTIC'
+          box=d.textbbox((0,0),text2,font=f2)
+          x=(S-(box[2]-box[0]))//2
+          d.text((x,385),text2,font=f2,fill=(70,185,255,255))
+          im.save('kid_diagnostic.ico', sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])
+          '@ | Set-Content make_icon.py
+          python make_icon.py
 
       - name: Validate source
         run: |
           python -m py_compile main.py
 
-      - name: Build Windows executable
+      - name: Build KID Diagnostic Windows executable
         run: |
-          pyinstaller --noconfirm --clean --onefile --windowed --name VAG-MASTER-Diagnostic-PRO main.py
+          pyinstaller --noconfirm --clean --onefile --windowed --name KID-Diagnostic --icon kid_diagnostic.ico main.py
 
       - name: Check output
         shell: powershell
         run: |
           Get-ChildItem -Recurse dist
-          if (-not (Test-Path "dist\VAG-MASTER-Diagnostic-PRO.exe")) { exit 1 }
+          if (-not (Test-Path "dist\KID-Diagnostic.exe")) { exit 1 }
 
       - name: Upload Windows EXE
         uses: actions/upload-artifact@v4
         with:
-          name: VAG-MASTER-Diagnostic-PRO-Windows
-          path: dist/VAG-MASTER-Diagnostic-PRO.exe
+          name: KID-Diagnostic-Windows
+          path: dist/KID-Diagnostic.exe
           if-no-files-found: error
