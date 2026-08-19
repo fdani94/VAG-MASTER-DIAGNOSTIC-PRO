@@ -1,0 +1,33 @@
+VCDS Auto-Scan representative fixture - synthetic/anonymized
+
+Address 01: Engine
+Part No SW: 04E 906 027
+Component: R4 1.4l TFS
+1 Fault Found:
+17178 - Databus
+            U1123 - 00 [039] - Received Error Message
+            Intermittent - Confirmed - Tested Since Memory Clear
+
+Address 03: ABS Brakes
+Part No SW: 5Q0 614 517
+Component: ESC
+2 Faults Found:
+16401 - Tire Pressure Warning
+            C102D - 00 [137] - Pressure Loss
+            MIL ON - Confirmed
+16352 - Control Module
+            C10E2 - 00 [009] - Supply Voltage Too Low
+            Intermittent - Confirmed
+
+Address 09: Cent. Elect.
+Part No SW: 5Q0 937 084
+Component: BCM MQBAB
+No fault code found.
+
+Address 19: CAN Gateway
+Part No SW: 5Q0 907 530
+Component: GW MQB High
+1 Fault Found:
+131654 - No Communications with Control Module
+            U0100 - 00 [009] - Engine Control Module
+            Intermittent - Confirmed
