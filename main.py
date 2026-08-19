@@ -46,7 +46,9 @@ from ui_long_coding_page import apply as apply_long_coding_page
 from ui_autoscan_page import apply as apply_autoscan_page
 from autoscan_runtime_fix import apply as apply_autoscan_runtime_fix
 from ui_autoscan_result_focus import apply as apply_autoscan_result_focus
+from autoscan_live_ui_patch import apply as apply_autoscan_live_ui
 from ui_autoscan_pdf_export import apply as apply_autoscan_pdf_export
+from autoscan_pdf_fix_patch import apply as apply_autoscan_pdf_fix
 from ui_coverage_audit import apply as apply_coverage_audit
 from ui_vag_light_theme import apply as apply_vag_light_theme
 
@@ -55,7 +57,9 @@ apply_long_coding_page(MainWindow)
 apply_autoscan_page(MainWindow)
 apply_autoscan_runtime_fix(MainWindow)
 apply_autoscan_result_focus(MainWindow)
+apply_autoscan_live_ui(MainWindow)
 apply_autoscan_pdf_export(MainWindow)
+apply_autoscan_pdf_fix(MainWindow)
 apply_coverage_audit(MainWindow)
 apply_vag_light_theme(MainWindow)
 
@@ -78,7 +82,6 @@ def main():
         install_brake_steering_procedures(con)
 
         # Compatibility for expansion packs created against the older `procedures` table.
-        # Prevents sqlite3.OperationalError: no such table: procedures on existing installations.
         ensure_legacy_schema(con)
         install_lighting_headlight_procedures(con)
         install_hvac_procedures(con)
@@ -106,7 +109,6 @@ def main():
         install_autoscan_bcu_dtc(con)
         install_autoscan_can_gateway_master(con)
         install_autoscan_audi_b8_common(con)
-        # Run last: fill only still-missing areas with conditional, unverified baselines.
         install_coverage_gap_filler(con)
     finally:
         con.close()
