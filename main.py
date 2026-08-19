@@ -20,8 +20,10 @@ if not hasattr(appdb, "src_diag"):
 
 from ui_pro import MainWindow
 from ui_expert_patch import apply as apply_expert_ui
+from ui_vag_light_theme import apply as apply_vag_light_theme
 
 apply_expert_ui(MainWindow)
+apply_vag_light_theme(MainWindow)
 
 
 def main():
