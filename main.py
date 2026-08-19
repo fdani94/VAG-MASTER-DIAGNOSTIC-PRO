@@ -19,6 +19,7 @@ from catalog_complete_1996_2024 import install as install_catalog_complete
 from long_coding_master_pack import install as install_long_coding_master
 from autoscan_dtc_pack import install as install_autoscan_dtc
 from autoscan_dtc_expansion_2 import install as install_autoscan_dtc_expansion_2
+from autoscan_chassis_dtc_pack import install as install_autoscan_chassis_dtc
 
 # Compatibility hotfix for the current v5 seed data.
 if not hasattr(appdb, "src_diag"):
@@ -61,6 +62,7 @@ def main():
         install_long_coding_master(con)
         install_autoscan_dtc(con)
         install_autoscan_dtc_expansion_2(con)
+        install_autoscan_chassis_dtc(con)
     finally:
         con.close()
 
