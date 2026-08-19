@@ -24,6 +24,7 @@ from autoscan_mass_dtc_pack import install as install_autoscan_mass_dtc
 from autoscan_verified_dtc_pack_3 import install as install_autoscan_verified_dtc_3
 from autoscan_bcu_dtc_pack import install as install_autoscan_bcu_dtc
 from autoscan_can_gateway_master import install as install_autoscan_can_gateway_master
+from autoscan_audi_b8_common_pack import install as install_autoscan_audi_b8_common
 
 # Compatibility hotfix for the current v5 seed data.
 if not hasattr(appdb, "src_diag"):
@@ -33,11 +34,13 @@ from ui_pro import MainWindow
 from ui_expert_patch import apply as apply_expert_ui
 from ui_long_coding_page import apply as apply_long_coding_page
 from ui_autoscan_page import apply as apply_autoscan_page
+from autoscan_runtime_fix import apply as apply_autoscan_runtime_fix
 from ui_vag_light_theme import apply as apply_vag_light_theme
 
 apply_expert_ui(MainWindow)
 apply_long_coding_page(MainWindow)
 apply_autoscan_page(MainWindow)
+apply_autoscan_runtime_fix(MainWindow)
 apply_vag_light_theme(MainWindow)
 
 
@@ -71,6 +74,7 @@ def main():
         install_autoscan_verified_dtc_3(con)
         install_autoscan_bcu_dtc(con)
         install_autoscan_can_gateway_master(con)
+        install_autoscan_audi_b8_common(con)
     finally:
         con.close()
 
