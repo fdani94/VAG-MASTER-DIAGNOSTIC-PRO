@@ -2,10 +2,14 @@
 from html import escape
 from pathlib import Path
 
-from PySide6.QtCore import QMarginsF
-from PySide6.QtGui import QTextDocument, QPdfWriter, QPageLayout, QPageSize
+from PySide6.QtCore import QMarginsF, Qt
+from PySide6.QtGui import (
+    QTextDocument, QPdfWriter, QPageLayout, QPageSize,
+    QImage, QPainter, QColor, QPen, QFont
+)
 from PySide6.QtWidgets import QPushButton, QFileDialog, QMessageBox
 
+from appdb import APP_DATA
 from autoscan_correlation import render_correlation
 from autoscan_ro import ro_status, ro_module, ro_title, ro_confidence, ro_vcds_note
 
@@ -25,19 +29,76 @@ def _vehicle_text(self):
     return " • ".join(parts) or "Vehicul selectat în KID Diagnostic"
 
 
+def _report_logo_uri():
+    """Create a persistent report logo that mirrors the KID Diagnostic app icon.
+
+    It is generated at runtime so PDF export does not depend on the build .ico file
+    or on a fragile local Desktop path.
+    """
+    logo = Path(APP_DATA) / "kid_diagnostic_report_logo.png"
+    if not logo.exists() or logo.stat().st_size < 1000:
+        img = QImage(900, 250, QImage.Format.Format_ARGB32)
+        img.fill(QColor("#04101f"))
+        p = QPainter(img)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+        # Emblem
+        p.setPen(QPen(QColor("#00a4ff"), 9))
+        p.setBrush(QColor("#071a2d"))
+        p.drawEllipse(20, 20, 205, 205)
+        p.setPen(QPen(QColor("#d7e5ef"), 5))
+        p.drawEllipse(34, 34, 177, 177)
+
+        # Stylised car line
+        p.setPen(QPen(QColor("#43bfff"), 7, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+        p.drawLine(67, 125, 92, 95)
+        p.drawLine(92, 95, 155, 95)
+        p.drawLine(155, 95, 185, 125)
+        p.drawLine(62, 126, 191, 126)
+        p.drawEllipse(78, 117, 28, 28)
+        p.drawEllipse(151, 117, 28, 28)
+
+        # KID word mark
+        p.setPen(QColor("#f2f7fb"))
+        f = QFont("Arial", 55)
+        f.setBold(True)
+        p.setFont(f)
+        p.drawText(255, 30, 280, 100, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "KID")
+
+        p.setPen(QColor("#2fb7ff"))
+        f2 = QFont("Arial", 26)
+        f2.setBold(True)
+        p.setFont(f2)
+        p.drawText(258, 105, 520, 65, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "DIAGNOSTIC")
+
+        p.setPen(QColor("#a9c2d3"))
+        f3 = QFont("Arial", 13)
+        p.setFont(f3)
+        p.drawText(260, 166, 610, 45, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                   "VAG MASTER • AUTO-SCAN • PLAN DIAGNOSTIC")
+        p.end()
+        img.save(str(logo), "PNG")
+    return logo.as_uri()
+
+
 def _build_html(self):
     result = self.current_autoscan
     plans = list(self.autoscan_plans or [])
     corr = self.autoscan_correlation
     vin = getattr(result, "vin", "") or "—"
     src = Path(getattr(result, "source_path", "autoscan")).name
+    logo_uri = _report_logo_uri()
 
     css = """
     <style>
       body { font-family: Arial, sans-serif; color:#172331; font-size:10.5pt; }
-      h1 { font-size:22pt; margin:0 0 4px 0; color:#0f3752; }
+      h1 { font-size:21pt; margin:0 0 4px 0; color:#0f3752; }
       h2 { font-size:15pt; margin:18px 0 7px 0; color:#145f88; border-bottom:1px solid #9bc6de; padding-bottom:3px; }
       h3 { font-size:12pt; margin:14px 0 4px 0; color:#173f58; }
+      .header { width:100%; margin:0 0 10px 0; border-bottom:2px solid #1d88bd; padding-bottom:8px; }
+      .logo { width:255px; }
+      .headerTitle { font-size:18pt; font-weight:bold; color:#0f3752; }
+      .headerSub { font-size:9.5pt; color:#617887; }
       .meta { background:#eef6fa; border:1px solid #a9d1e5; padding:9px; margin:8px 0 12px 0; }
       .summary { background:#172331; color:white; padding:12px; margin:10px 0 14px 0; }
       .fault { border:1px solid #c9d7df; padding:9px; margin:9px 0 12px 0; }
@@ -50,7 +111,13 @@ def _build_html(self):
     secondary = len((corr or {}).get("secondary", []))
     primary = max(0, len(plans) - secondary)
     html = ["<html><head>", css, "</head><body>"]
-    html.append("<h1>KID Diagnostic - Raport Auto-Scan VCDS</h1>")
+    html.append(
+        "<table class='header' cellspacing='0' cellpadding='0'><tr>"
+        f"<td width='285'><img class='logo' src='{logo_uri}'></td>"
+        "<td valign='middle'><div class='headerTitle'>Raport Auto-Scan VCDS</div>"
+        "<div class='headerSub'>Diagnostic ghidat • Live Data • Plan de verificare</div></td>"
+        "</tr></table>"
+    )
     html.append(
         f"<div class='meta'><b>Vehicul:</b> {_e(_vehicle_text(self))}<br>"
         f"<b>VIN:</b> {_e(vin)}<br><b>Fișier analizat:</b> {_e(src)}<br>"
@@ -113,7 +180,6 @@ def apply(MainWindow):
         self.autoscan_export_pdf_btn.setObjectName("primary")
         self.autoscan_export_pdf_btn.setEnabled(False)
         self.autoscan_export_pdf_btn.clicked.connect(self.export_autoscan_pdf)
-        # Keep it visible just below the large result area / scan controls.
         root.insertWidget(3 if root.count() >= 3 else root.count(), self.autoscan_export_pdf_btn)
 
     def export_autoscan_pdf(self):
@@ -142,7 +208,6 @@ def apply(MainWindow):
             return
         QMessageBox.information(self, "Salvare PDF", f"Raportul a fost salvat cu succes:\n{path}")
 
-    # Enable export when a parsed scan is populated.
     old_populate = MainWindow.populate_autoscan
     def populate_autoscan(self, result):
         old_populate(self, result)
