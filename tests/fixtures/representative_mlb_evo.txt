@@ -1,0 +1,21 @@
+# REPRESENTATIVE / SYNTHETIC VCDS FIXTURE - MLB EVO
+Address 01: Engine
+1 Fault Found:
+Fault Code: P20EE
+SCR NOx Catalyst Efficiency Below Threshold
+Fault Priority: 2
+Fault Frequency: 1
+Address 03: ABS Brakes
+1 Fault Found:
+Fault Code: U1121
+Databus missing message
+Fault Priority: 6
+Fault Frequency: 3
+Address 19: CAN Gateway
+No fault code found.
+Address 5F: Information Electr.
+1 Fault Found:
+Fault Code: B201A
+Checking software version management
+Fault Priority: 6
+Fault Frequency: 1
