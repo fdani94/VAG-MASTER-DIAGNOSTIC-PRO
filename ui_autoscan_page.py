@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
 )
 
 from autoscan_parser import parse_autoscan_file, diagnostic_plan, compare_results
+from autoscan_correlation import correlate, render_correlation
 
 
 def apply(MainWindow):
@@ -25,8 +26,8 @@ def apply(MainWindow):
         h = QLabel("Analiză Auto-Scan VCDS")
         h.setObjectName("sectionTitle")
         sub = QLabel(
-            "Încarcă raportul VCDS TXT/LOG sau PDF. KID Diagnostic extrage modulele și toate DTC-urile, "
-            "apoi le corelează cu baza locală și cu mașina selectată."
+            "Încarcă raportul VCDS TXT/LOG sau PDF. KID Diagnostic extrage toate DTC-urile, "
+            "le corelează între module și îți arată ce trebuie verificat întâi."
         )
         sub.setWordWrap(True)
         sub.setObjectName("muted")
@@ -37,9 +38,12 @@ def apply(MainWindow):
         self.autoscan_load_btn = QPushButton("Încarcă Auto-Scan")
         self.autoscan_load_btn.setObjectName("primary")
         self.autoscan_load_btn.clicked.connect(self.load_autoscan_file)
+        self.autoscan_plan_btn = QPushButton("Plan diagnostic automat")
+        self.autoscan_plan_btn.clicked.connect(self.show_autoscan_correlation)
         self.autoscan_compare_btn = QPushButton("Compară după reparație")
         self.autoscan_compare_btn.clicked.connect(self.compare_autoscan_file)
         title_row.addWidget(self.autoscan_load_btn)
+        title_row.addWidget(self.autoscan_plan_btn)
         title_row.addWidget(self.autoscan_compare_btn)
         root.addLayout(title_row)
 
@@ -80,6 +84,7 @@ def apply(MainWindow):
 
         self.current_autoscan = None
         self.autoscan_plans = []
+        self.autoscan_correlation = None
         return page
 
     def build_ui(self):
@@ -130,6 +135,7 @@ def apply(MainWindow):
         for fault in result.faults:
             plans.append((fault, diagnostic_plan(self.con, fault, self.selected_generation_id, engine_id)))
         self.autoscan_plans = plans
+        self.autoscan_correlation = correlate(result, plans)
         self.autoscan_table.setRowCount(len(plans))
         self.autoscan_table.setProperty("rows", plans)
         for i, (fault, plan) in enumerate(plans):
@@ -151,10 +157,11 @@ def apply(MainWindow):
         indexed = sum(1 for _, p in plans if p.get("found"))
         static = sum(1 for f, _ in plans if "static" in (f.status or "").lower() or "confirmed" in (f.status or "").lower())
         intermittent = sum(1 for f, _ in plans if "intermittent" in (f.status or "").lower() or "sporadic" in (f.status or "").lower())
+        secondary = len(self.autoscan_correlation.get("secondary", [])) if self.autoscan_correlation else 0
         vin = f" • VIN {result.vin}" if result.vin else ""
         self.autoscan_summary.setText(
-            f"{Path(result.source_path).name}{vin} • {len(result.modules)} module detectate • "
-            f"{len(result.faults)} DTC-uri • {indexed} cu fișă locală • {static} statice/confirmate • {intermittent} intermitente"
+            f"{Path(result.source_path).name}{vin} • {len(result.modules)} module • {len(result.faults)} DTC-uri • "
+            f"{indexed} cu fișă • {static} statice/confirmate • {intermittent} intermitente • {secondary} probabil secundare"
         )
         if plans:
             self.autoscan_table.selectRow(0)
@@ -164,6 +171,15 @@ def apply(MainWindow):
                 "Raportul a fost citit, dar parserul nu a identificat coduri DTC. Dacă raportul este PDF scanat ca imagine, "
                 "exportă Auto-Scan-ul direct din VCDS ca TXT."
             )
+
+    def show_autoscan_correlation(self):
+        if not self.current_autoscan or not self.autoscan_plans:
+            QMessageBox.warning(self, "Plan diagnostic", "Încarcă mai întâi un Auto-Scan cu DTC-uri.")
+            return
+        if not self.autoscan_correlation:
+            self.autoscan_correlation = correlate(self.current_autoscan, self.autoscan_plans)
+        self.autoscan_fault_title.setText("Plan diagnostic automat • cauze principale și erori secundare")
+        self.autoscan_detail.setPlainText(render_correlation(self.autoscan_correlation))
 
     def show_autoscan_fault(self):
         row = self.autoscan_table.currentRow()
@@ -242,6 +258,7 @@ def apply(MainWindow):
     MainWindow.build_ui = build_ui
     MainWindow.load_autoscan_file = load_autoscan_file
     MainWindow.populate_autoscan = populate_autoscan
+    MainWindow.show_autoscan_correlation = show_autoscan_correlation
     MainWindow.show_autoscan_fault = show_autoscan_fault
     MainWindow.compare_autoscan_file = compare_autoscan_file
     MainWindow._require_vehicle = _require_vehicle
