@@ -24,6 +24,7 @@ from lighting_headlight_procedures_expansion import install as install_lighting_
 from hvac_procedures_expansion import install as install_hvac_procedures
 from airbag_instruments_immobilizer_expansion import install as install_airbag_instruments_immobilizer
 from comfort_gateway_multimedia_expansion import install as install_comfort_gateway_multimedia
+from coverage_gap_filler import install as install_coverage_gap_filler
 from long_coding_master_pack import install as install_long_coding_master
 from autoscan_dtc_pack import install as install_autoscan_dtc
 from autoscan_dtc_expansion_2 import install as install_autoscan_dtc_expansion_2
@@ -96,6 +97,8 @@ def main():
         install_autoscan_bcu_dtc(con)
         install_autoscan_can_gateway_master(con)
         install_autoscan_audi_b8_common(con)
+        # Run last: fill only still-missing areas with conditional, unverified baselines.
+        install_coverage_gap_filler(con)
     finally:
         con.close()
 
