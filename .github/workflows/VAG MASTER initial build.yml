@@ -22,7 +22,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install PySide6==6.11.1
+          pip install -r requirements.txt
           pip install pyinstaller==6.21.0
           pip install pillow
 
@@ -34,16 +34,13 @@ jobs:
           S=512
           im=Image.new('RGBA',(S,S),(4,16,31,255))
           d=ImageDraw.Draw(im)
-          # premium blue circular VAG-style badge
           d.ellipse((18,18,S-18,S-18), fill=(5,25,48,255), outline=(170,190,210,255), width=18)
           d.ellipse((36,36,S-36,S-36), outline=(0,155,255,255), width=14)
           d.ellipse((54,54,S-54,S-54), outline=(0,80,155,255), width=5)
-          # simplified car/diagnostic motif
           d.rounded_rectangle((105,150,407,255), radius=45, outline=(45,180,255,255), width=12)
           d.line((150,150,205,105,310,105,362,150), fill=(205,225,240,255), width=12)
           d.ellipse((125,225,185,285), fill=(2,12,25,255), outline=(0,160,255,255), width=8)
           d.ellipse((327,225,387,285), fill=(2,12,25,255), outline=(0,160,255,255), width=8)
-          # KID wordmark
           try:
               f1=ImageFont.truetype('C:/Windows/Fonts/arialbd.ttf',105)
               f2=ImageFont.truetype('C:/Windows/Fonts/arialbd.ttf',42)
@@ -63,11 +60,11 @@ jobs:
 
       - name: Validate source
         run: |
-          python -m py_compile main.py
+          python -m py_compile main.py autoscan_parser.py ui_autoscan_page.py autoscan_dtc_pack.py
 
       - name: Build KID Diagnostic Windows executable
         run: |
-          pyinstaller --noconfirm --clean --onefile --windowed --name KID-Diagnostic --icon kid_diagnostic.ico main.py
+          pyinstaller --noconfirm --clean --onefile --windowed --name KID-Diagnostic --icon kid_diagnostic.ico --collect-all pypdf main.py
 
       - name: Check output
         shell: powershell
