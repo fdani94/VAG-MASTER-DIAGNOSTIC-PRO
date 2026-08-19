@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
 
 from autoscan_parser import parse_autoscan_file, diagnostic_plan, compare_results
 from autoscan_correlation import correlate, render_correlation
+from autoscan_ro import ro_status, ro_module, ro_title, ro_confidence, ro_vcds_note
 
 
 def apply(MainWindow):
@@ -26,8 +27,8 @@ def apply(MainWindow):
         h = QLabel("Analiză Auto-Scan VCDS")
         h.setObjectName("sectionTitle")
         sub = QLabel(
-            "Încarcă raportul VCDS TXT/LOG sau PDF. KID Diagnostic extrage toate DTC-urile, "
-            "le corelează între module și îți arată ce trebuie verificat întâi."
+            "Încarcă raportul VCDS TXT/LOG sau PDF. KID Diagnostic extrage toate erorile, "
+            "le explică în română, le corelează între module și îți arată ce trebuie verificat întâi."
         )
         sub.setWordWrap(True)
         sub.setObjectName("muted")
@@ -61,7 +62,7 @@ def apply(MainWindow):
         lh = QLabel("ERORI GĂSITE")
         lh.setObjectName("fieldLabel")
         ll.addWidget(lh)
-        self.autoscan_table = self.make_table(["Modul", "Cod", "Descriere", "Status", "Bază"])
+        self.autoscan_table = self.make_table(["Modul", "Cod", "Explicație", "Stare", "Nivel informație"])
         self.autoscan_table.itemSelectionChanged.connect(self.show_autoscan_fault)
         ll.addWidget(self.autoscan_table, 1)
         split.addWidget(left)
@@ -70,7 +71,7 @@ def apply(MainWindow):
         right.setObjectName("detailPanel")
         rl = QVBoxLayout(right)
         rl.setContentsMargins(18, 16, 18, 16)
-        self.autoscan_fault_title = QLabel("Selectează un DTC")
+        self.autoscan_fault_title = QLabel("Selectează o eroare")
         self.autoscan_fault_title.setObjectName("detailTitle")
         self.autoscan_fault_title.setWordWrap(True)
         self.autoscan_detail = QTextEdit()
@@ -139,12 +140,14 @@ def apply(MainWindow):
         self.autoscan_table.setRowCount(len(plans))
         self.autoscan_table.setProperty("rows", plans)
         for i, (fault, plan) in enumerate(plans):
+            module_text = f"{fault.module_address} {ro_module(fault.module_name)}".strip()
+            title_ro = ro_title(plan.get("title") or fault.title)
             vals = [
-                f"{fault.module_address} {fault.module_name}".strip(),
+                module_text,
                 fault.code or fault.vag_code,
-                plan.get("title") or fault.title,
-                fault.status or "—",
-                "GĂSIT" if plan.get("found") else "DE COMPLETAT",
+                title_ro,
+                ro_status(fault.status),
+                ro_confidence(plan.get("found"), plan.get("verified")),
             ]
             for j, value in enumerate(vals):
                 self.autoscan_table.setItem(i, j, QTableWidgetItem(str(value)))
@@ -160,13 +163,13 @@ def apply(MainWindow):
         secondary = len(self.autoscan_correlation.get("secondary", [])) if self.autoscan_correlation else 0
         vin = f" • VIN {result.vin}" if result.vin else ""
         self.autoscan_summary.setText(
-            f"{Path(result.source_path).name}{vin} • {len(result.modules)} module • {len(result.faults)} DTC-uri • "
-            f"{indexed} cu fișă • {static} statice/confirmate • {intermittent} intermitente • {secondary} probabil secundare"
+            f"{Path(result.source_path).name}{vin} • {len(result.modules)} module detectate • {len(result.faults)} erori • "
+            f"{indexed} cu fișă locală • {static} statice/confirmate • {intermittent} intermitente • {secondary} probabil secundare"
         )
         if plans:
             self.autoscan_table.selectRow(0)
         else:
-            self.autoscan_fault_title.setText("Nu am găsit DTC-uri în raport")
+            self.autoscan_fault_title.setText("Nu am găsit coduri de eroare în raport")
             self.autoscan_detail.setPlainText(
                 "Raportul a fost citit, dar parserul nu a identificat coduri DTC. Dacă raportul este PDF scanat ca imagine, "
                 "exportă Auto-Scan-ul direct din VCDS ca TXT."
@@ -174,12 +177,12 @@ def apply(MainWindow):
 
     def show_autoscan_correlation(self):
         if not self.current_autoscan or not self.autoscan_plans:
-            QMessageBox.warning(self, "Plan diagnostic", "Încarcă mai întâi un Auto-Scan cu DTC-uri.")
+            QMessageBox.warning(self, "Plan diagnostic", "Încarcă mai întâi un Auto-Scan cu erori.")
             return
         if not self.autoscan_correlation:
             self.autoscan_correlation = correlate(self.current_autoscan, self.autoscan_plans)
         self.autoscan_fault_title.setText("Plan diagnostic automat • cauze principale și erori secundare")
-        self.autoscan_detail.setPlainText(render_correlation(self.autoscan_correlation))
+        self.autoscan_detail.setPlainText(render_correlation(self.autoscan_correlation) + "\n\nNOTĂ VCDS\n" + ro_vcds_note())
 
     def show_autoscan_fault(self):
         row = self.autoscan_table.currentRow()
@@ -188,25 +191,27 @@ def apply(MainWindow):
             return
         fault, p = rows[row]
         code = fault.code or fault.vag_code or "DTC"
-        self.autoscan_fault_title.setText(f"{code} • {p.get('title') or fault.title}")
-        verified = "VERIFICAT/INDEXAT" if p.get("verified") else ("INDEXAT" if p.get("found") else "NEINDEXAT ÎNCĂ")
+        title_ro = ro_title(p.get("title") or fault.title)
+        self.autoscan_fault_title.setText(f"{code} • {title_ro}")
+        confidence = ro_confidence(p.get("found"), p.get("verified"))
         text = (
-            f"MODUL\n{p.get('module','—')}\n\n"
-            f"STATUS DIN AUTO-SCAN\n{p.get('status','—')}\n\n"
-            f"NIVEL BAZĂ\n{verified}\n\n"
-            f"CE ÎNSEAMNĂ\n{p.get('description','')}\n\n"
-            f"SIMPTOME POSIBILE\n{p.get('symptoms','')}\n\n"
-            f"CAUZE POSIBILE\n{p.get('causes','')}\n\n"
-            f"PIESA / SISTEM\n{p.get('component','')}\n\n"
-            f"UNDE SE AFLĂ\n{p.get('location','')}\n\n"
+            f"MODUL\n{fault.module_address} {ro_module(fault.module_name)}\n\n"
+            f"STARE DIN AUTO-SCAN\n{ro_status(p.get('status',''))}\n\n"
+            f"NIVELUL INFORMAȚIEI\n{confidence}\n\n"
+            f"CE ÎNSEAMNĂ\n{p.get('description','') or 'Explicația completă nu este încă disponibilă în baza locală.'}\n\n"
+            f"SIMPTOME POSIBILE\n{p.get('symptoms','') or 'Simptomele depind de sistem și de starea exactă a erorii.'}\n\n"
+            f"CAUZE POSIBILE\n{p.get('causes','') or 'Verifică mai întâi alimentarea, masa, cablajul, conectorii și DTC-urile asociate.'}\n\n"
+            f"PIESA / SISTEMUL IMPLICAT\n{p.get('component','') or 'De identificat după modul, cod motor și textul complet al DTC-ului.'}\n\n"
+            f"UNDE SE AFLĂ\n{p.get('location','') or 'Locația exactă diferă după model, generație și motor.'}\n\n"
             f"CE VERIFICI ÎN VCDS\n{p.get('parameters','')}\n\n"
             f"VALORI / COMPORTAMENT AȘTEPTAT\n{p.get('expected','')}\n\n"
-            f"CALE VCDS\n{p.get('test_path','')}\n\n"
+            f"TRASEU ÎN VCDS\n{p.get('test_path','')}\n\n"
             f"DIAGNOSTIC PAS CU PAS\n{p.get('diagnosis','')}\n\n"
             f"CUM O REPARI\n{p.get('repair','')}\n\n"
-            f"DACĂ TREBUIE SCHIMBATĂ PIESA / DUPĂ MONTAJ\n{p.get('replacement','')}\n\n"
+            f"DACĂ TREBUIE SCHIMBATĂ PIESA / CE FACI DUPĂ MONTAJ\n{p.get('replacement','')}\n\n"
             f"FREEZE FRAME / DATE DIN RAPORT\n{p.get('freeze_frame','')}\n\n"
-            f"FINAL\nDupă reparație: Clear DTC numai după remedierea cauzei → contact conform procedurii → test drive dacă este necesar → Auto-Scan complet din nou."
+            f"NOTĂ DESPRE DENUMIRILE VCDS\n{ro_vcds_note()}\n\n"
+            f"VERIFICARE FINALĂ\nDupă repararea cauzei: Clear DTC → ciclu de contact conform procedurii → test funcțional sau test drive dacă este necesar → Auto-Scan complet din nou."
         )
         self.autoscan_detail.setPlainText(text)
 
@@ -231,16 +236,19 @@ def apply(MainWindow):
         def lines(items):
             if not items:
                 return "—"
-            return "\n".join(f"• {x.module_address} {x.module_name}: {x.code or x.vag_code} {x.title}" for x in items)
+            return "\n".join(
+                f"• {x.module_address} {ro_module(x.module_name)}: {x.code or x.vag_code} — {ro_title(x.title)}"
+                for x in items
+            )
         msg = (
             f"REZOLVATE ({len(resolved)})\n{lines(resolved)}\n\n"
             f"RĂMASE ({len(remaining)})\n{lines(remaining)}\n\n"
-            f"NOI ({len(new)})\n{lines(new)}"
+            f"ERORI NOI ({len(new)})\n{lines(new)}"
         )
-        self.autoscan_fault_title.setText("Comparație Auto-Scan: înainte vs după")
+        self.autoscan_fault_title.setText("Comparație Auto-Scan: înainte vs după reparație")
         self.autoscan_detail.setPlainText(msg)
         self.autoscan_summary.setText(
-            f"Comparație: {len(resolved)} rezolvate • {len(remaining)} rămase • {len(new)} noi"
+            f"Comparație: {len(resolved)} rezolvate • {len(remaining)} rămase • {len(new)} erori noi"
         )
 
     def open_page(self, index):
