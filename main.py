@@ -17,6 +17,7 @@ from battery_visibility_pack import install as install_battery_visibility
 from engine_battery_fix_pack import install as install_engine_battery_fix
 from catalog_complete_1996_2024 import install as install_catalog_complete
 from long_coding_master_pack import install as install_long_coding_master
+from autoscan_dtc_pack import install as install_autoscan_dtc
 
 # Compatibility hotfix for the current v5 seed data.
 if not hasattr(appdb, "src_diag"):
@@ -25,10 +26,12 @@ if not hasattr(appdb, "src_diag"):
 from ui_pro import MainWindow
 from ui_expert_patch import apply as apply_expert_ui
 from ui_long_coding_page import apply as apply_long_coding_page
+from ui_autoscan_page import apply as apply_autoscan_page
 from ui_vag_light_theme import apply as apply_vag_light_theme
 
 apply_expert_ui(MainWindow)
 apply_long_coding_page(MainWindow)
+apply_autoscan_page(MainWindow)
 apply_vag_light_theme(MainWindow)
 
 
@@ -55,6 +58,7 @@ def main():
         install_battery_visibility(con)
         install_engine_battery_fix(con)
         install_long_coding_master(con)
+        install_autoscan_dtc(con)
     finally:
         con.close()
 
