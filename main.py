@@ -22,6 +22,7 @@ from autoscan_dtc_expansion_2 import install as install_autoscan_dtc_expansion_2
 from autoscan_chassis_dtc_pack import install as install_autoscan_chassis_dtc
 from autoscan_mass_dtc_pack import install as install_autoscan_mass_dtc
 from autoscan_verified_dtc_pack_3 import install as install_autoscan_verified_dtc_3
+from autoscan_bcu_dtc_pack import install as install_autoscan_bcu_dtc
 
 # Compatibility hotfix for the current v5 seed data.
 if not hasattr(appdb, "src_diag"):
@@ -67,6 +68,7 @@ def main():
         install_autoscan_chassis_dtc(con)
         install_autoscan_mass_dtc(con)
         install_autoscan_verified_dtc_3(con)
+        install_autoscan_bcu_dtc(con)
     finally:
         con.close()
 
