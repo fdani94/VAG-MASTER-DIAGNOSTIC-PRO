@@ -1,5 +1,10 @@
 import unittest
+from pathlib import Path
+
 from autoscan_parser import parse_autoscan_text
+
+
+FIXTURES = Path(__file__).parent / "fixtures"
 
 
 class AutoScanParserTests(unittest.TestCase):
@@ -18,7 +23,7 @@ Component: 1,9l R4 EDC
         self.assertEqual(r.vin, 'WVWZZZ1JZ3W000001')
         self.assertEqual(len(r.modules), 1)
         self.assertEqual(len(r.faults), 2)
-        self.assertEqual(r.declared_faults, 2)
+        self.assertEqual(r.declared_fault_count, 2)
         self.assertTrue(r.validation_ok)
         self.assertEqual({f.vag_code for f in r.faults}, {'16683', '17964'})
 
@@ -37,7 +42,7 @@ Address 19: CAN Gateway
         r = parse_autoscan_text(text)
         self.assertEqual(len(r.modules), 3)
         self.assertEqual(len(r.faults), 2)
-        self.assertEqual(r.declared_faults, 2)
+        self.assertEqual(r.declared_fault_count, 2)
         self.assertTrue(r.validation_ok)
 
     def test_uds_fault_code_format(self):
@@ -53,7 +58,7 @@ Fault Priority: 4
 Fault Frequency: 1
 '''
         r = parse_autoscan_text(text)
-        self.assertEqual(r.declared_faults, 2)
+        self.assertEqual(r.declared_fault_count, 2)
         self.assertEqual(len(r.faults), 2)
         self.assertTrue(r.validation_ok)
 
@@ -64,11 +69,11 @@ Fault Frequency: 1
             P0299 - 35-10 - Intermittent
 '''
         r = parse_autoscan_text(text)
-        self.assertEqual(r.declared_faults, 3)
+        self.assertEqual(r.declared_fault_count, 3)
         self.assertEqual(len(r.faults), 1)
         self.assertFalse(r.validation_ok)
-        self.assertEqual(r.validation_missing, 2)
-        self.assertTrue(r.validation_issues)
+        self.assertIn('2 erori', r.validation_message)
+        self.assertTrue(r.validation_details)
 
     def test_static_and_intermittent_status(self):
         text = '''Address 08: Auto HVAC
@@ -83,6 +88,28 @@ Fault Frequency: 1
         self.assertIn('Intermittent', r.faults[0].status)
         self.assertIn('Static', r.faults[1].status)
         self.assertTrue(r.validation_ok)
+
+    def test_real_audi_b8_anonymized_regression(self):
+        """Regression fixture derived from a real VCDS 25.3 Auto-Scan; personal data is removed."""
+        text = (FIXTURES / 'real_audi_b8_autoscan_anonymized.txt').read_text(encoding='utf-8')
+        r = parse_autoscan_text(text, 'real_audi_b8_autoscan_anonymized.txt')
+
+        self.assertEqual(r.declared_fault_count, 14)
+        self.assertEqual(r.parsed_fault_count, 14)
+        self.assertEqual(len(r.faults), 14)
+        self.assertTrue(r.validation_ok, r.validation_message)
+        self.assertFalse(r.validation_details)
+
+        codes = {(f.module_address, f.code or f.vag_code) for f in r.faults}
+        expected = {
+            ('01', 'P261A'), ('01', 'P0671'), ('01', 'P0672'), ('01', 'P0673'),
+            ('01', 'P0674'), ('01', 'P2196'), ('05', '00955'), ('19', '03041'),
+            ('46', '02615'), ('46', '02616'), ('46', '01699'), ('52', '02115'),
+            ('56', '02095'), ('72', '02115'),
+        }
+        self.assertEqual(codes, expected)
+        self.assertEqual(next(f for f in r.faults if f.code == 'P261A').frequency, '1')
+        self.assertIn('Intermittent', next(f for f in r.faults if f.vag_code == '00955').status)
 
 
 if __name__ == '__main__':
