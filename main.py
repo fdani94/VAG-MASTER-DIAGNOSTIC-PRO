@@ -21,6 +21,7 @@ from transmission_procedures_expansion import install as install_transmission_pr
 from engine_procedures_expansion import install as install_engine_procedures
 from brake_steering_procedures_expansion import install as install_brake_steering_procedures
 from lighting_headlight_procedures_expansion import install as install_lighting_headlight_procedures
+from hvac_procedures_expansion import install as install_hvac_procedures
 from long_coding_master_pack import install as install_long_coding_master
 from autoscan_dtc_pack import install as install_autoscan_dtc
 from autoscan_dtc_expansion_2 import install as install_autoscan_dtc_expansion_2
@@ -68,6 +69,7 @@ def main():
         install_engine_procedures(con)
         install_brake_steering_procedures(con)
         install_lighting_headlight_procedures(con)
+        install_hvac_procedures(con)
         install_supermaster(con)
         install_expert_data(con)
         install_replacement_calibration(con)
