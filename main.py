@@ -25,6 +25,7 @@ from lighting_headlight_procedures_expansion import install as install_lighting_
 from hvac_procedures_expansion import install as install_hvac_procedures
 from airbag_instruments_immobilizer_expansion import install as install_airbag_instruments_immobilizer
 from comfort_gateway_multimedia_expansion import install as install_comfort_gateway_multimedia
+from legacy_schema_compat import ensure_legacy_schema, migrate_legacy_procedures
 from coverage_gap_filler import install as install_coverage_gap_filler
 from long_coding_master_pack import install as install_long_coding_master
 from autoscan_dtc_pack import install as install_autoscan_dtc
@@ -75,10 +76,16 @@ def main():
         install_transmission_procedures(con)
         install_engine_procedures(con)
         install_brake_steering_procedures(con)
+
+        # Compatibility for expansion packs created against the older `procedures` table.
+        # Prevents sqlite3.OperationalError: no such table: procedures on existing installations.
+        ensure_legacy_schema(con)
         install_lighting_headlight_procedures(con)
         install_hvac_procedures(con)
         install_airbag_instruments_immobilizer(con)
         install_comfort_gateway_multimedia(con)
+        migrate_legacy_procedures(con)
+
         install_supermaster(con)
         install_expert_data(con)
         install_replacement_calibration(con)
