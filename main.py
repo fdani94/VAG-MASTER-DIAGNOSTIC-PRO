@@ -35,6 +35,7 @@ from ui_long_coding_page import apply as apply_long_coding_page
 from ui_autoscan_page import apply as apply_autoscan_page
 from autoscan_runtime_fix import apply as apply_autoscan_runtime_fix
 from ui_autoscan_result_focus import apply as apply_autoscan_result_focus
+from ui_autoscan_pdf_export import apply as apply_autoscan_pdf_export
 from ui_vag_light_theme import apply as apply_vag_light_theme
 
 apply_expert_ui(MainWindow)
@@ -42,6 +43,7 @@ apply_long_coding_page(MainWindow)
 apply_autoscan_page(MainWindow)
 apply_autoscan_runtime_fix(MainWindow)
 apply_autoscan_result_focus(MainWindow)
+apply_autoscan_pdf_export(MainWindow)
 apply_vag_light_theme(MainWindow)
 
 
