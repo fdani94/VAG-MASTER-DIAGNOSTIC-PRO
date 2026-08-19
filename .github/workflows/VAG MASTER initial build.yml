@@ -20,24 +20,26 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        shell: powershell
         run: |
           python -m pip install --upgrade pip
-          python -m pip install "PySide6==6.8.3" "pyinstaller==6.15.0"
+          pip install PySide6==6.11.1
+          pip install pyinstaller==6.21.0
 
-      - name: Validate Python source
-        run: python -m py_compile main.py
+      - name: Validate source
+        run: |
+          python -m py_compile main.py
 
-      - name: Build single EXE
-        run: python -m PyInstaller --noconfirm --clean --windowed --onefile --name VAG-MASTER-Diagnostic-PRO main.py
+      - name: Build Windows executable
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed --name VAG-MASTER-Diagnostic-PRO main.py
 
-      - name: Verify EXE
+      - name: Check output
         shell: powershell
         run: |
-          if (!(Test-Path "dist/VAG-MASTER-Diagnostic-PRO.exe")) { throw "EXE not created" }
-          Get-Item "dist/VAG-MASTER-Diagnostic-PRO.exe"
+          Get-ChildItem -Recurse dist
+          if (-not (Test-Path "dist\VAG-MASTER-Diagnostic-PRO.exe")) { exit 1 }
 
-      - name: Upload EXE
+      - name: Upload Windows EXE
         uses: actions/upload-artifact@v4
         with:
           name: VAG-MASTER-Diagnostic-PRO-Windows
