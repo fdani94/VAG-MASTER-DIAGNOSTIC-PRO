@@ -3,11 +3,35 @@
 Ensures the button is enabled after scan parsing and after diagnostic-plan rendering,
 and exports through QtPrintSupport for reliable Unicode PDF output in the Windows build.
 """
+from html import escape
 from pathlib import Path
 
 from PySide6.QtGui import QTextDocument
 from PySide6.QtPrintSupport import QPrinter
 from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+
+def _with_live_data(html, plans):
+    blocks = []
+    for fault, plan in plans:
+        ref = str(plan.get("live_reference", "") or "").strip()
+        if not ref:
+            continue
+        code = getattr(fault, "code", "") or getattr(fault, "vag_code", "") or "DTC"
+        title = plan.get("title") or getattr(fault, "title", "") or ""
+        blocks.append(
+            "<div class='fault'>"
+            f"<h3>{escape(str(code))} - {escape(str(title))}</h3>"
+            "<p><span class='label'>VALORI LIVE DATA / INTERVALE DE REFERINȚĂ:</span><br>"
+            + escape(ref).replace("\n", "<br>") + "</p></div>"
+        )
+    if not blocks:
+        return html
+    section = "<h2>Valori Live Data de verificat în VCDS</h2>" + "".join(blocks)
+    marker = "<h2>Notă VCDS</h2>"
+    if marker in html:
+        return html.replace(marker, section + marker, 1)
+    return html.replace("</body></html>", section + "</body></html>")
 
 
 def apply(MainWindow):
@@ -36,7 +60,6 @@ def apply(MainWindow):
             QMessageBox.warning(self, "Salvare PDF", "Încarcă mai întâi un Auto-Scan VCDS cu erori și generează analiza.")
             return
 
-        # Import here so this patch can be loaded independently of the export UI module.
         try:
             from ui_autoscan_pdf_export import _build_html
         except Exception as exc:
@@ -58,7 +81,8 @@ def apply(MainWindow):
             printer.setDocName("KID Diagnostic - Raport Auto-Scan VCDS")
             doc = QTextDocument()
             doc.setDocumentMargin(28)
-            doc.setHtml(_build_html(self))
+            html = _with_live_data(_build_html(self), list(getattr(self, "autoscan_plans", []) or []))
+            doc.setHtml(html)
             doc.print_(printer)
             if not Path(path).exists() or Path(path).stat().st_size < 500:
                 raise RuntimeError("Fișierul PDF nu a fost creat corect sau este gol.")
