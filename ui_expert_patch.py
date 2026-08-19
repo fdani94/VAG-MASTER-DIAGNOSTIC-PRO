@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
 
 
 CATEGORY_ORDER = [
-    "Toate", "Proceduri", "Diagnostic", "Parametri live", "Adaptation",
+    "Toate", "Proceduri", "Diagnostic", "Parametri live", "Baterie", "Adaptation",
     "Calibrări", "Resetări", "Long Coding", "Coding", "Basic Settings",
     "Output Tests", "Security Access", "Service", "Frâne", "Motor", "Transmisie"
 ]
@@ -33,7 +33,7 @@ def apply(MainWindow):
         chips = QHBoxLayout()
         self.category_buttons = []
         for label, category in [
-            ("Proceduri", "Proceduri"), ("Adaptări", "Adaptation"), ("Calibrări", "Calibrări"),
+            ("Proceduri", "Proceduri"), ("Baterie", "Baterie"), ("Adaptări", "Adaptation"), ("Calibrări", "Calibrări"),
             ("Resetări", "Resetări"), ("Long Coding", "Long Coding"), ("Coding", "Coding"),
             ("Basic Settings", "Basic Settings"), ("Output Tests", "Output Tests"),
             ("Security Access", "Security Access"), ("Parametri live", "Parametri live")
