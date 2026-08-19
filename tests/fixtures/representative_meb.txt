@@ -1,0 +1,23 @@
+# REPRESENTATIVE / SYNTHETIC VCDS FIXTURE - MEB
+Address 01: Engine
+No fault code found.
+Address 03: ABS Brakes
+1 Fault Found:
+Fault Code: U1121
+Databus missing message
+Fault Priority: 6
+Fault Frequency: 1
+Address 19: CAN Gateway
+1 Fault Found:
+Fault Code: U0100
+Lost Communication With ECM/PCM
+Fault Priority: 2
+Fault Frequency: 1
+Address 51: Electric Drive
+1 Fault Found:
+Fault Code: P0A1F
+Drive Motor Control Module
+Fault Priority: 2
+Fault Frequency: 1
+Address 5F: Information Electr.
+No fault code found.
