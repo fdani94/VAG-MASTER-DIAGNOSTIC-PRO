@@ -19,8 +19,7 @@ SUBCATEGORIES = [
 
 def _bucket(row):
     text=' '.join([row['title'] or '',row['module_address'] or '',row['vcds_path'] or '',row['purpose'] or '']).lower()
-    if not row['verified']:
-        return 'community'
+    if not row['verified']: return 'community'
     if any(x in text for x in ['drl','cornering','coming home','leaving home','light','lumini','xenon','fog']): return 'lights'
     if any(x in text for x in ['geam','window','mirror','oglind','lock','unlock','rain closing','comfort']): return 'comfort'
     if any(x in text for x in ['needle','staging','lap timer','instrument','cluster','oil temp','temperatură ulei']): return 'cluster'
@@ -37,39 +36,29 @@ def apply(MainWindow):
     old_select_vehicle=MainWindow.select_vehicle
 
     def build_long_page(self):
-        page=QWidget()
-        root=QVBoxLayout(page); root.setContentsMargins(0,8,0,0); root.setSpacing(12)
-
-        top=QHBoxLayout()
-        titlebox=QVBoxLayout()
+        page=QWidget(); root=QVBoxLayout(page); root.setContentsMargins(0,8,0,0); root.setSpacing(12)
+        top=QHBoxLayout(); titlebox=QVBoxLayout()
         h=QLabel('Long Coding pe mașina selectată'); h.setObjectName('sectionTitle')
         sub=QLabel('Alege vehiculul din bara de sus. În stânga alegi sistemul, în centru funcția, iar în dreapta ai pașii VCDS.')
-        sub.setWordWrap(True); sub.setObjectName('muted')
-        titlebox.addWidget(h); titlebox.addWidget(sub)
-        self.lc_search=QLineEdit(); self.lc_search.setPlaceholderText('Caută funcție: needle sweep, cornering, mirror dip, DRL, XDS...')
-        self.lc_search.setMinimumWidth(360)
+        sub.setWordWrap(True); sub.setObjectName('muted'); titlebox.addWidget(h); titlebox.addWidget(sub)
+        self.lc_search=QLineEdit(); self.lc_search.setPlaceholderText('Caută funcție: needle sweep, cornering, mirror dip, DRL, XDS...'); self.lc_search.setMinimumWidth(360)
         self.lc_search.textChanged.connect(self.load_long_coding)
-        top.addLayout(titlebox,1); top.addWidget(self.lc_search)
-        root.addLayout(top)
+        top.addLayout(titlebox,1); top.addWidget(self.lc_search); root.addLayout(top)
 
         split=QSplitter(Qt.Horizontal)
-
         left=QFrame(); left.setObjectName('detailPanel'); left.setMinimumWidth(210); left.setMaximumWidth(260)
         ll=QVBoxLayout(left); ll.setContentsMargins(10,12,10,12)
         lab=QLabel('CATEGORII'); lab.setObjectName('fieldLabel'); ll.addWidget(lab)
         self.lc_categories=QListWidget(); self.lc_categories.setObjectName('categoryList')
         for label,key in SUBCATEGORIES:
             item=QListWidgetItem(label); item.setData(Qt.UserRole,key); self.lc_categories.addItem(item)
-        self.lc_categories.setCurrentRow(0)
-        self.lc_categories.currentItemChanged.connect(lambda *_: self.load_long_coding())
-        ll.addWidget(self.lc_categories,1)
-        split.addWidget(left)
+        self.lc_categories.setCurrentRow(0); self.lc_categories.currentItemChanged.connect(lambda *_: self.load_long_coding())
+        ll.addWidget(self.lc_categories,1); split.addWidget(left)
 
         center=QFrame(); center.setObjectName('detailPanel'); cl=QVBoxLayout(center); cl.setContentsMargins(10,12,10,12)
         self.lc_count=QLabel('0 funcții'); self.lc_count.setObjectName('muted'); cl.addWidget(self.lc_count)
         self.lc_table=self.make_table(['Funcție','Modul','Nivel'])
-        self.lc_table.itemSelectionChanged.connect(self.show_long_coding)
-        self.lc_table.cellDoubleClicked.connect(lambda *_: self.show_long_coding())
+        self.lc_table.itemSelectionChanged.connect(self.show_long_coding); self.lc_table.cellDoubleClicked.connect(lambda *_: self.show_long_coding())
         cl.addWidget(self.lc_table,1); split.addWidget(center)
 
         right=QFrame(); right.setObjectName('detailPanel'); rl=QVBoxLayout(right); rl.setContentsMargins(18,16,18,16)
@@ -77,28 +66,25 @@ def apply(MainWindow):
         self.lc_text=QTextEdit(); self.lc_text.setReadOnly(True); self.lc_text.setObjectName('instructionText')
         b=QPushButton('Deschide sursa'); b.clicked.connect(self.open_current_source)
         rl.addWidget(self.lc_title); rl.addWidget(self.lc_text,1); rl.addWidget(b,0,Qt.AlignRight)
-        split.addWidget(right)
-        split.setSizes([230,520,760])
-        root.addWidget(split,1)
+        split.addWidget(right); split.setSizes([230,520,760]); root.addWidget(split,1)
         return page
 
     def build_ui(self):
         old_build_ui(self)
-        idx=self.stack.addWidget(build_long_page(self))
-        self.long_coding_page_index=idx
+        idx=self.stack.addWidget(build_long_page(self)); self.long_coding_page_index=idx
+        if len(self.PAGE_NAMES)<=idx:
+            self.PAGE_NAMES=list(self.PAGE_NAMES)+['Long Coding']
         sidebar=self.findChild(QFrame,'sidebar')
         if sidebar:
             btn=QPushButton('Long Coding'); btn.setObjectName('nav'); btn.setCheckable(True); btn.setCursor(Qt.PointingHandCursor)
-            btn.clicked.connect(lambda _=False,x=idx:self.open_page(x))
-            self.nav_buttons.append(btn)
+            btn.clicked.connect(lambda _=False,x=idx:self.open_page(x)); self.nav_buttons.append(btn)
             layout=sidebar.layout(); pos=max(0,layout.count()-2); layout.insertWidget(pos,btn)
 
     def load_long_coding(self):
         if not hasattr(self,'lc_table'): return
         self.lc_table.setRowCount(0)
         if not self.selected_generation_id:
-            self.lc_count.setText('Selectează mai întâi o mașină')
-            return
+            self.lc_count.setText('Selectează mai întâi o mașină'); return
         sql='''SELECT p.*,vp.applicability,vp.notes,s.title source_title,s.url source_url
                FROM vehicle_procedures vp JOIN procedure_library p ON p.id=vp.procedure_id
                LEFT JOIN sources s ON s.id=p.source_id
@@ -115,34 +101,23 @@ def apply(MainWindow):
         for i,r in enumerate(rows):
             level='VERIFICAT' if r['verified'] else 'COMUNITATE'
             for j,v in enumerate([r['title'],r['module_address'] or '—',level]): self.lc_table.setItem(i,j,QTableWidgetItem(str(v)))
-        self.lc_table.horizontalHeader().setSectionResizeMode(0,QHeaderView.Stretch)
-        self.lc_table.resizeColumnToContents(1); self.lc_table.resizeColumnToContents(2)
+        self.lc_table.horizontalHeader().setSectionResizeMode(0,QHeaderView.Stretch); self.lc_table.resizeColumnToContents(1); self.lc_table.resizeColumnToContents(2)
 
     def show_long_coding(self):
         row=self.lc_table.currentRow(); rows=self.lc_table.property('rows') or []
         if row<0 or row>=len(rows): return
         r=rows[row]; self.current_source_url=r['source_url'] or ''; self.lc_title.setText(r['title'])
         level='VERIFICAT' if r['verified'] else 'COMUNITATE / PIAȚĂ – confirmă pe controller'
-        txt=(
-            f"MODUL\n{r['module_address'] or '—'}\n\n"
-            f"CALE ÎN VCDS\n{r['vcds_path']}\n\n"
-            f"CE FACE\n{r['purpose']}\n\n"
-            f"ÎNAINTE SĂ ÎNCEPI\n{r['prerequisites']}\n\n"
-            f"PAȘI\n{r['steps']}\n\n"
-            f"CUM VERIFICI\n{r['success_criteria']}\n\n"
-            f"ATENȚIE\n{r['warnings']}\n\n"
-            f"APLICABILITATE\n{r['applicability']}\n\n"
-            f"NIVEL\n{level}\n\n"
-            f"SURSĂ\n{r['source_title'] or '—'}"
+        self.lc_text.setPlainText(
+            f"MODUL\n{r['module_address'] or '—'}\n\nCALE ÎN VCDS\n{r['vcds_path']}\n\nCE FACE\n{r['purpose']}\n\n"
+            f"ÎNAINTE SĂ ÎNCEPI\n{r['prerequisites']}\n\nPAȘI\n{r['steps']}\n\nCUM VERIFICI\n{r['success_criteria']}\n\n"
+            f"ATENȚIE\n{r['warnings']}\n\nAPLICABILITATE\n{r['applicability']}\n\nNIVEL\n{level}\n\nSURSĂ\n{r['source_title'] or '—'}"
         )
-        self.lc_text.setPlainText(txt)
 
     def open_page(self,index):
         old_open_page(self,index)
         if hasattr(self,'long_coding_page_index') and index==self.long_coding_page_index:
-            self.page_title.setText('Long Coding')
-            for i,b in enumerate(self.nav_buttons): b.setChecked(b.text()=='Long Coding')
-            self.load_long_coding()
+            self.page_title.setText('Long Coding'); self.load_long_coding()
 
     def select_vehicle(self):
         old_select_vehicle(self)
