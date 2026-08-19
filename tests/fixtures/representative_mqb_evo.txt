@@ -1,0 +1,21 @@
+# REPRESENTATIVE / SYNTHETIC VCDS FIXTURE - MQB EVO
+Address 01: Engine
+1 Fault Found:
+Fault Code: U1123
+Databus error value received
+Fault Priority: 6
+Fault Frequency: 2
+Address 03: ABS Brakes
+1 Fault Found:
+Fault Code: C10E2
+Control module not coded
+Fault Priority: 3
+Fault Frequency: 1
+Address 09: Cent. Elect.
+1 Fault Found:
+Fault Code: B12E5
+Terminal 30 open circuit
+Fault Priority: 4
+Fault Frequency: 1
+Address 19: CAN Gateway
+No fault code found.
