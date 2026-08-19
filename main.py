@@ -1,600 +1,366 @@
 import sys
-import sqlite3
-import shutil
 import json
+import csv
+import shutil
+import sqlite3
 from pathlib import Path
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QSize
-from PySide6.QtGui import QFont, QPainter, QPen, QColor
+from PySide6.QtCore import Qt, QSize, QStandardPaths, QUrl
+from PySide6.QtGui import QColor, QFont, QPainter, QPen, QDesktopServices
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QLineEdit, QPushButton, QStackedWidget, QTableWidget, QTableWidgetItem,
-    QHeaderView, QFileDialog, QMessageBox, QFrame, QGridLayout, QAbstractItemView,
-    QDialog, QTextEdit, QDialogButtonBox, QComboBox
+    QApplication, QMainWindow, QWidget, QFrame, QLabel, QPushButton, QLineEdit,
+    QVBoxLayout, QHBoxLayout, QGridLayout, QStackedWidget, QTableWidget,
+    QTableWidgetItem, QHeaderView, QAbstractItemView, QComboBox, QTextEdit,
+    QFileDialog, QMessageBox, QDialog, QDialogButtonBox
 )
 
-APP_ROOT = Path(__file__).resolve().parent
-DATA_DIR = APP_ROOT / "data"
-DATA_DIR.mkdir(exist_ok=True)
-DB_PATH = DATA_DIR / "vag_master.db"
+APP_NAME = "VAG MASTER Diagnostic PRO"
+APP_VERSION = "3.0.0"
+
+
+def app_data_dir():
+    base = QStandardPaths.writableLocation(QStandardPaths.AppDataLocation)
+    path = Path(base) if base else Path.home() / ".vag_master_pro"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+DB_PATH = app_data_dir() / "vag_master.db"
+
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS dtc(
+    code TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    severity TEXT DEFAULT 'Mediu',
+    symptoms TEXT DEFAULT '',
+    causes TEXT DEFAULT '',
+    repair TEXT DEFAULT '',
+    verified INTEGER DEFAULT 0,
+    source TEXT DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS vehicles(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    brand TEXT NOT NULL,
+    model TEXT NOT NULL,
+    generation TEXT NOT NULL,
+    year_from INTEGER,
+    year_to INTEGER,
+    platform TEXT DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS modules(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    address TEXT,
+    name TEXT,
+    protocol TEXT,
+    family TEXT DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS coding(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT,
+    module TEXT,
+    effect TEXT,
+    applicability TEXT DEFAULT '',
+    restore_method TEXT DEFAULT '',
+    verified INTEGER DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS procedures(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT,
+    category TEXT,
+    steps TEXT,
+    warnings TEXT DEFAULT '',
+    verified INTEGER DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS notes(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type TEXT,
+    entity_key TEXT,
+    note TEXT,
+    created_at TEXT
+);
+"""
+
+
+def ensure_column(con, table, column, definition):
+    cols = {row[1] for row in con.execute(f"PRAGMA table_info({table})")}
+    if column not in cols:
+        con.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
 def connect_db():
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
-    con.executescript('''
-    CREATE TABLE IF NOT EXISTS dtc(
-        code TEXT PRIMARY KEY,
-        title TEXT,
-        description TEXT,
-        severity TEXT,
-        symptoms TEXT DEFAULT '',
-        causes TEXT DEFAULT '',
-        repair TEXT DEFAULT '',
-        verified INTEGER DEFAULT 0
-    );
-    CREATE TABLE IF NOT EXISTS vehicles(
-        brand TEXT,
-        model TEXT,
-        generation TEXT,
-        year_from INTEGER,
-        year_to INTEGER
-    );
-    CREATE TABLE IF NOT EXISTS modules(
-        address TEXT,
-        name TEXT,
-        protocol TEXT
-    );
-    CREATE TABLE IF NOT EXISTS coding(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title TEXT,
-        module TEXT,
-        effect TEXT,
-        applicability TEXT DEFAULT '',
-        verified INTEGER DEFAULT 0
-    );
-    CREATE TABLE IF NOT EXISTS procedures(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title TEXT,
-        category TEXT,
-        steps TEXT,
-        warnings TEXT DEFAULT '',
-        verified INTEGER DEFAULT 0
-    );
-    ''')
-    if con.execute("SELECT COUNT(*) FROM dtc").fetchone()[0] == 0:
-        con.executemany(
-            "INSERT INTO dtc(code,title,description,severity,symptoms,causes,repair,verified) VALUES(?,?,?,?,?,?,?,?)",
-            [
-                ("P0401", "EGR insufficient flow", "Debit EGR insuficient. Diagnosticul exact depinde de motor/ECU.", "Mediu",
-                 "Martor motor; răspuns slab; posibil fum", "EGR colmatat; admisie murdară; vacuum/comandă; cablaj",
-                 "Verifică DTC-urile asociate, valorile măsurate, comanda EGR, traseul de admisie și cablajul. Confirmă procedura specifică motorului.", 0),
-                ("P0299", "Turbocharger underboost", "Presiune de supraalimentare sub valoarea cerută.", "Ridicat",
-                 "Putere redusă; limp mode", "Furtun fisurat; actuator; vacuum; geometrie; senzor MAP",
-                 "Compară presiunea cerută/reală, verifică traseul charge-air, vacuumul și actuatorul turbinei.", 0),
-                ("P0101", "MAF range/performance", "Semnal debitmetru în afara intervalului așteptat.", "Mediu",
-                 "Putere redusă; consum crescut", "MAF murdar/defect; fals aer; EGR; filtru aer",
-                 "Compară masa de aer cerută/reală și verifică admisia înainte de înlocuirea senzorului.", 0),
-                ("P2002", "DPF efficiency below threshold", "Eficiența filtrului de particule sub prag.", "Ridicat",
-                 "Martor DPF/MIL; regenerări dese", "DPF încărcat; senzori presiune/temperatură; probleme ardere",
-                 "Verifică încărcarea calculată, presiunea diferențială și cauza producerii excesive de funingine înainte de regenerare.", 0),
-                ("P2463", "DPF soot accumulation", "Acumulare ridicată de funingine în DPF.", "Ridicat",
-                 "Martor DPF; limitare putere", "Regenerări întrerupte; senzor diferențial; EGR/injecție",
-                 "Nu forța regenerarea fără verificarea temperaturilor, încărcării, uleiului și condițiilor de siguranță.", 0),
-            ],
-        )
-        con.executemany(
-            "INSERT INTO vehicles VALUES(?,?,?,?,?)",
-            [
-                ("Volkswagen", "Golf", "IV 1J", 1997, 2006),
-                ("Volkswagen", "Golf", "V 1K", 2003, 2009),
-                ("Volkswagen", "Golf", "VI 5K", 2008, 2013),
-                ("Volkswagen", "Golf", "VII 5G", 2012, 2020),
-                ("Volkswagen", "Golf", "VIII CD", 2019, 2024),
-                ("Volkswagen", "Passat", "B5/B5.5", 1996, 2005),
-                ("Volkswagen", "Passat", "B6", 2005, 2010),
-                ("Volkswagen", "Passat", "B7", 2010, 2014),
-                ("Volkswagen", "Passat", "B8", 2014, 2024),
-                ("Audi", "A3", "8P", 2003, 2013),
-                ("Audi", "A3", "8V", 2012, 2020),
-                ("Audi", "A4", "B7", 2004, 2008),
-                ("Audi", "A4", "B8", 2007, 2016),
-                ("Audi", "A4", "B9", 2015, 2024),
-                ("Škoda", "Octavia", "I 1U", 1996, 2010),
-                ("Škoda", "Octavia", "II 1Z", 2004, 2013),
-                ("Škoda", "Octavia", "III 5E", 2013, 2020),
-                ("Škoda", "Octavia", "IV NX", 2019, 2024),
-                ("SEAT / Cupra", "Leon", "III 5F", 2012, 2020),
-                ("SEAT / Cupra", "Leon", "IV KL", 2020, 2024),
-            ],
-        )
-        con.executemany(
-            "INSERT INTO modules VALUES(?,?,?)",
-            [
-                ("01", "Engine", "KWP/CAN/UDS"),
-                ("02", "Auto Trans", "CAN/UDS"),
-                ("03", "ABS Brakes", "KWP/CAN/UDS"),
-                ("08", "HVAC", "CAN/UDS"),
-                ("09", "Central Electrics", "KWP/CAN/UDS"),
-                ("15", "Airbags", "KWP/CAN/UDS"),
-                ("17", "Instruments", "KWP/CAN/UDS"),
-                ("19", "CAN Gateway", "CAN/UDS"),
-                ("44", "Steering Assist", "CAN/UDS"),
-                ("46", "Comfort", "KWP/CAN"),
-                ("5F", "Information Electronics", "UDS"),
-                ("55", "Headlight Range", "CAN/UDS"),
-            ],
-        )
-        con.executemany(
-            "INSERT INTO coding(title,module,effect,applicability,verified) VALUES(?,?,?,?,?)",
-            [
-                ("Coming / Leaving Home", "09 Central Electrics", "Controlează iluminarea de confort", "Depinde de BCM, software și echipare", 0),
-                ("Auto Lock", "46 Comfort / 09 Central Electrics", "Blocare automată în mers", "Depinde de generație", 0),
-                ("Needle Sweep", "17 Instruments", "Test ace la contact", "Doar clustere compatibile", 0),
-            ],
-        )
-        con.executemany(
-            "INSERT INTO procedures(title,category,steps,warnings,verified) VALUES(?,?,?,?,?)",
-            [
-                ("Scanare completă VCDS", "Diagnostic", "1. Conectează interfața.\n2. Contact ON.\n3. Auto-Scan.\n4. Salvează raportul.\n5. Nu șterge DTC înainte de documentare.", "Folosește alimentare stabilă când lucrezi mult cu contactul pus.", 1),
-                ("Backup coding înainte de modificări", "Coding", "1. Deschide modulul.\n2. Copiază coding-ul original.\n3. Salvează Auto-Scan.\n4. Modifică o singură funcție odată.\n5. Testează și documentează.", "Nu aplica coding de pe altă mașină fără verificarea hardware/software/PR-codes.", 1),
-            ],
-        )
-        con.commit()
+    con.executescript(SCHEMA)
+    # Safe migration for databases created by older prototypes.
+    for column, definition in [
+        ("symptoms", "TEXT DEFAULT ''"), ("causes", "TEXT DEFAULT ''"),
+        ("repair", "TEXT DEFAULT ''"), ("verified", "INTEGER DEFAULT 0"),
+        ("source", "TEXT DEFAULT ''")
+    ]:
+        ensure_column(con, "dtc", column, definition)
+    ensure_column(con, "vehicles", "platform", "TEXT DEFAULT ''")
+    ensure_column(con, "modules", "family", "TEXT DEFAULT ''")
+    ensure_column(con, "coding", "applicability", "TEXT DEFAULT ''")
+    ensure_column(con, "coding", "restore_method", "TEXT DEFAULT ''")
+    ensure_column(con, "coding", "verified", "INTEGER DEFAULT 0")
+    ensure_column(con, "procedures", "warnings", "TEXT DEFAULT ''")
+    ensure_column(con, "procedures", "verified", "INTEGER DEFAULT 0")
+    seed(con)
     return con
 
 
-class LogoWidget(QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setFixedSize(58, 58)
+def seed(con):
+    if con.execute("SELECT COUNT(*) FROM dtc").fetchone()[0] == 0:
+        con.executemany(
+            "INSERT INTO dtc VALUES(?,?,?,?,?,?,?,?,?)",
+            [
+                ("P0401", "EGR - debit insuficient", "Debit EGR sub valoarea așteptată.", "Mediu",
+                 "MIL; răspuns slab; posibil fum", "EGR colmatat; admisie murdară; vacuum/comandă; cablaj",
+                 "Compară valorile cerute/reale, verifică traseul de admisie, comanda EGR și cablajul. Confirmă procedura specifică motorului.", 0, "Starter record"),
+                ("P0299", "Turbocharger underboost", "Presiune de supraalimentare sub valoarea cerută.", "Ridicat",
+                 "Putere redusă; limp mode", "Pierdere presiune; vacuum; actuator; geometrie; MAP",
+                 "Compară boost specified/actual și verifică traseul charge-air, vacuumul și actuatorul.", 0, "Starter record"),
+                ("P0101", "MAF range/performance", "Semnal MAF în afara intervalului așteptat.", "Mediu",
+                 "Consum crescut; putere redusă", "MAF; fals aer; EGR; filtru aer",
+                 "Verifică admisia și compară masa de aer cerută/reală înainte de înlocuirea senzorului.", 0, "Starter record"),
+                ("P2002", "DPF efficiency below threshold", "Eficiența DPF sub prag.", "Ridicat",
+                 "Martor DPF/MIL; regenerări dese", "DPF încărcat; senzori; probleme ardere",
+                 "Verifică presiunea diferențială, încărcarea calculată și cauza producerii excesive de funingine.", 0, "Starter record"),
+                ("P2463", "DPF soot accumulation", "Acumulare ridicată de funingine.", "Critic",
+                 "Limitare putere; martor DPF", "Regenerări întrerupte; senzor diferențial; EGR/injecție",
+                 "Nu forța regenerarea fără verificarea încărcării, temperaturilor, nivelului de ulei și condițiilor de siguranță.", 0, "Starter record")
+            ]
+        )
+    if con.execute("SELECT COUNT(*) FROM vehicles").fetchone()[0] == 0:
+        con.executemany(
+            "INSERT INTO vehicles(brand,model,generation,year_from,year_to,platform) VALUES(?,?,?,?,?,?)",
+            [
+                ("Volkswagen","Golf","IV 1J",1997,2006,"PQ34"),
+                ("Volkswagen","Golf","V 1K",2003,2009,"PQ35"),
+                ("Volkswagen","Golf","VI 5K",2008,2013,"PQ35"),
+                ("Volkswagen","Golf","VII 5G",2012,2020,"MQB"),
+                ("Volkswagen","Golf","VIII CD",2019,2024,"MQB Evo"),
+                ("Volkswagen","Passat","B5/B5.5",1996,2005,"PL45"),
+                ("Volkswagen","Passat","B6",2005,2010,"PQ46"),
+                ("Volkswagen","Passat","B7",2010,2014,"PQ46"),
+                ("Volkswagen","Passat","B8",2014,2024,"MQB"),
+                ("Audi","A3","8P",2003,2013,"PQ35"),
+                ("Audi","A3","8V",2012,2020,"MQB"),
+                ("Audi","A4","B7 8E",2004,2008,"PL46"),
+                ("Audi","A4","B8 8K",2007,2016,"MLB"),
+                ("Audi","A4","B9 8W",2015,2024,"MLB Evo"),
+                ("Škoda","Octavia","II 1Z",2004,2013,"PQ35"),
+                ("Škoda","Octavia","III 5E",2013,2020,"MQB"),
+                ("Škoda","Octavia","IV NX",2019,2024,"MQB Evo"),
+                ("SEAT / Cupra","Leon","III 5F",2012,2020,"MQB"),
+                ("SEAT / Cupra","Leon","IV KL",2020,2024,"MQB Evo")
+            ]
+        )
+    if con.execute("SELECT COUNT(*) FROM modules").fetchone()[0] == 0:
+        con.executemany(
+            "INSERT INTO modules(address,name,protocol,family) VALUES(?,?,?,?)",
+            [("01","Engine","KWP/CAN/UDS","Powertrain"),("02","Auto Trans","CAN/UDS","Powertrain"),
+             ("03","ABS Brakes","KWP/CAN/UDS","Chassis"),("08","HVAC","CAN/UDS","Body"),
+             ("09","Central Electrics","KWP/CAN/UDS","Body"),("15","Airbags","KWP/CAN/UDS","Safety"),
+             ("17","Instruments","KWP/CAN/UDS","Body"),("19","CAN Gateway","CAN/UDS","Network"),
+             ("44","Steering Assist","CAN/UDS","Chassis"),("46","Comfort","KWP/CAN","Body"),
+             ("5F","Information Electronics","UDS","Infotainment"),("55","Headlight Range","CAN/UDS","Body")]
+        )
+    if con.execute("SELECT COUNT(*) FROM coding").fetchone()[0] == 0:
+        con.executemany(
+            "INSERT INTO coding(title,module,effect,applicability,restore_method,verified) VALUES(?,?,?,?,?,?)",
+            [("Coming / Leaving Home","09 Central Electrics","Iluminare de confort","Depinde de BCM/software/echipare","Restabilește coding/adaptation original",0),
+             ("Auto Lock","46 Comfort / 09 Central Electrics","Blocare automată în mers","Depinde de generație","Restabilește valoarea originală",0),
+             ("Needle Sweep","17 Instruments","Test ace la contact","Doar clustere compatibile","Dezactivează aceeași opțiune",0)]
+        )
+    if con.execute("SELECT COUNT(*) FROM procedures").fetchone()[0] == 0:
+        con.executemany(
+            "INSERT INTO procedures(title,category,steps,warnings,verified) VALUES(?,?,?,?,?)",
+            [("Auto-Scan complet VCDS","Diagnostic","1. Conectează interfața.\n2. Contact ON.\n3. Rulează Auto-Scan.\n4. Salvează raportul.\n5. Documentează DTC înainte de ștergere.","Folosește tensiune stabilă când contactul rămâne pornit mult timp.",1),
+             ("Backup înainte de Coding","Coding","1. Salvează Auto-Scan.\n2. Copiază coding-ul original.\n3. Modifică o singură opțiune.\n4. Testează.\n5. Notează schimbarea.","Nu copia coding de la alt vehicul fără verificarea hardware/software/PR-codes.",1)]
+        )
+    con.commit()
 
+
+class BrandMark(QWidget):
+    def __init__(self):
+        super().__init__(); self.setFixedSize(54,54)
     def paintEvent(self, event):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
-        pen = QPen(QColor("#60a5fa"), 3)
-        p.setPen(pen)
-        p.setBrush(QColor("#0f1b33"))
-        p.drawRoundedRect(5, 5, 48, 48, 14, 14)
-        p.setPen(QColor("#f8fafc"))
-        font = QFont("Arial", 20, QFont.Bold)
-        p.setFont(font)
-        p.drawText(self.rect(), Qt.AlignCenter, "V")
+        p=QPainter(self); p.setRenderHint(QPainter.Antialiasing)
+        p.setPen(QPen(QColor("#3b82f6"),2)); p.setBrush(QColor("#111c32")); p.drawRoundedRect(3,3,48,48,14,14)
+        p.setPen(QColor("#f8fafc")); p.setFont(QFont("Arial",18,QFont.Bold)); p.drawText(self.rect(),Qt.AlignCenter,"VM")
 
 
-class Card(QFrame):
-    def __init__(self, title, value, subtitle=""):
-        super().__init__()
-        self.setObjectName("card")
-        lay = QVBoxLayout(self)
-        title_lbl = QLabel(title)
-        title_lbl.setObjectName("cardTitle")
-        value_lbl = QLabel(str(value))
-        value_lbl.setObjectName("cardValue")
-        sub_lbl = QLabel(subtitle)
-        sub_lbl.setObjectName("cardSub")
-        lay.addWidget(title_lbl)
-        lay.addWidget(value_lbl)
-        lay.addWidget(sub_lbl)
-        lay.addStretch()
+class StatCard(QFrame):
+    def __init__(self,title,value,sub):
+        super().__init__(); self.setObjectName("statCard")
+        l=QVBoxLayout(self); l.setContentsMargins(18,16,18,16)
+        a=QLabel(title); a.setObjectName("statLabel")
+        self.value=QLabel(str(value)); self.value.setObjectName("statValue")
+        b=QLabel(sub); b.setObjectName("muted")
+        l.addWidget(a); l.addWidget(self.value); l.addWidget(b)
 
 
 class DetailDialog(QDialog):
-    def __init__(self, title, body, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle(title)
-        self.resize(760, 560)
-        lay = QVBoxLayout(self)
-        header = QLabel(title)
-        header.setObjectName("dialogTitle")
-        text = QTextEdit()
-        text.setReadOnly(True)
-        text.setPlainText(body)
-        buttons = QDialogButtonBox(QDialogButtonBox.Close)
-        buttons.rejected.connect(self.reject)
-        buttons.accepted.connect(self.accept)
-        lay.addWidget(header)
-        lay.addWidget(text)
-        lay.addWidget(buttons)
+    def __init__(self,title,body,parent=None):
+        super().__init__(parent); self.setWindowTitle(title); self.resize(780,600)
+        l=QVBoxLayout(self); h=QLabel(title); h.setObjectName("dialogTitle")
+        text=QTextEdit(); text.setReadOnly(True); text.setPlainText(body)
+        buttons=QDialogButtonBox(QDialogButtonBox.Close); buttons.rejected.connect(self.reject)
+        l.addWidget(h); l.addWidget(text); l.addWidget(buttons)
 
 
 class MainWindow(QMainWindow):
+    PAGES=["Dashboard","Căutare","Vehicule","DTC","Module","Coding VCDS","Proceduri","Instrumente"]
     def __init__(self):
-        super().__init__()
-        self.con = connect_db()
-        self.setWindowTitle("VAG MASTER Diagnostic PRO")
-        self.resize(1500, 900)
-        self.setMinimumSize(1180, 720)
-        self.nav_buttons = []
-        self.build_ui()
-        self.apply_style()
-        self.refresh_all()
-        self.statusBar().showMessage("VAG MASTER Diagnostic PRO • baza locală SQLite încărcată")
+        super().__init__(); self.con=connect_db(); self.nav=[]
+        self.setWindowTitle(f"{APP_NAME} • v{APP_VERSION}"); self.resize(1520,920); self.setMinimumSize(1180,720)
+        self.build_ui(); self.apply_style(); self.refresh_all(); self.open_page(0)
+        self.statusBar().showMessage(f"Database: {DB_PATH}")
 
     def build_ui(self):
-        root = QWidget()
-        layout = QHBoxLayout(root)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        root=QWidget(); outer=QHBoxLayout(root); outer.setContentsMargins(0,0,0,0); outer.setSpacing(0)
+        side=QFrame(); side.setObjectName("sidebar"); side.setFixedWidth(255); sl=QVBoxLayout(side); sl.setContentsMargins(20,24,20,20)
+        brand=QHBoxLayout(); brand.addWidget(BrandMark()); bt=QVBoxLayout(); name=QLabel("VAG MASTER"); name.setObjectName("brand"); ver=QLabel("DIAGNOSTIC PRO"); ver.setObjectName("brandSub"); bt.addWidget(name); bt.addWidget(ver); brand.addLayout(bt); brand.addStretch(); sl.addLayout(brand); sl.addSpacing(24)
+        for i,label in enumerate(self.PAGES):
+            b=QPushButton(label); b.setObjectName("nav"); b.setCheckable(True); b.setCursor(Qt.PointingHandCursor); b.clicked.connect(lambda _=False,x=i:self.open_page(x)); self.nav.append(b); sl.addWidget(b)
+        sl.addStretch(); badge=QLabel(f"v{APP_VERSION}\n1996–2024"); badge.setObjectName("version"); sl.addWidget(badge)
 
-        sidebar = QFrame()
-        sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(245)
-        side = QVBoxLayout(sidebar)
-        side.setContentsMargins(20, 24, 20, 20)
-        side.setSpacing(8)
+        content=QFrame(); content.setObjectName("content"); cl=QVBoxLayout(content); cl.setContentsMargins(30,24,30,24); cl.setSpacing(16)
+        top=QHBoxLayout(); self.page_title=QLabel("Dashboard"); self.page_title.setObjectName("pageTitle"); self.search=QLineEdit(); self.search.setPlaceholderText("DTC, model, generație, modul, coding..."); self.search.setMinimumWidth(420); self.search.returnPressed.connect(self.global_search)
+        sb=QPushButton("Caută"); sb.setObjectName("primary"); sb.clicked.connect(self.global_search); top.addWidget(self.page_title); top.addStretch(); top.addWidget(self.search); top.addWidget(sb); cl.addLayout(top)
+        self.stack=QStackedWidget(); self.stack.addWidget(self.page_dashboard()); self.stack.addWidget(self.page_search()); self.stack.addWidget(self.page_vehicles()); self.stack.addWidget(self.page_dtc()); self.stack.addWidget(self.page_modules()); self.stack.addWidget(self.page_coding()); self.stack.addWidget(self.page_procedures()); self.stack.addWidget(self.page_tools()); cl.addWidget(self.stack)
+        outer.addWidget(side); outer.addWidget(content,1); self.setCentralWidget(root)
 
-        brand = QHBoxLayout()
-        brand.addWidget(LogoWidget())
-        brand_text = QVBoxLayout()
-        name = QLabel("VAG MASTER")
-        name.setObjectName("brandName")
-        pro = QLabel("DIAGNOSTIC PRO")
-        pro.setObjectName("brandSub")
-        brand_text.addWidget(name)
-        brand_text.addWidget(pro)
-        brand.addLayout(brand_text)
-        brand.addStretch()
-        side.addLayout(brand)
-        side.addSpacing(22)
+    def heading(self,title,sub):
+        w=QWidget(); l=QVBoxLayout(w); l.setContentsMargins(0,0,0,0); a=QLabel(title); a.setObjectName("sectionTitle"); b=QLabel(sub); b.setObjectName("muted"); l.addWidget(a); l.addWidget(b); return w
+    def make_table(self,headers):
+        t=QTableWidget(0,len(headers)); t.setHorizontalHeaderLabels(headers); t.setSelectionBehavior(QAbstractItemView.SelectRows); t.setEditTriggers(QAbstractItemView.NoEditTriggers); t.setAlternatingRowColors(True); t.verticalHeader().setVisible(False); t.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents); t.horizontalHeader().setStretchLastSection(True); return t
+    def fill(self,t,rows):
+        t.setRowCount(len(rows))
+        for r,row in enumerate(rows):
+            for c,val in enumerate(row): t.setItem(r,c,QTableWidgetItem("" if val is None else str(val)))
 
-        nav = [
-            ("Dashboard", "▦"),
-            ("Căutare", "⌕"),
-            ("Vehicule", "▣"),
-            ("DTC", "⚠"),
-            ("Module", "◫"),
-            ("Coding", "⌘"),
-            ("Proceduri", "☑"),
-            ("Instrumente", "⚙"),
-        ]
-        for index, (text, icon) in enumerate(nav):
-            btn = QPushButton(f"{icon}   {text}")
-            btn.setObjectName("navButton")
-            btn.setCheckable(True)
-            btn.setCursor(Qt.PointingHandCursor)
-            btn.clicked.connect(lambda checked=False, i=index: self.open_page(i))
-            self.nav_buttons.append(btn)
-            side.addWidget(btn)
-        side.addStretch()
+    def page_dashboard(self):
+        w=QWidget(); l=QVBoxLayout(w); l.setContentsMargins(0,0,0,0); l.addWidget(self.heading("Overview","Starea bazei locale și acces rapid")); g=QGridLayout(); self.stats={}
+        for i,k in enumerate(["Vehicule","DTC","Module","Coding"]): self.stats[k]=StatCard(k,0,"înregistrări"); g.addWidget(self.stats[k],0,i)
+        l.addLayout(g); panel=QFrame(); panel.setObjectName("panel"); pl=QVBoxLayout(panel); ttl=QLabel("Flux recomandat"); ttl.setObjectName("panelTitle"); pl.addWidget(ttl); pl.addWidget(QLabel("1. Auto-Scan → 2. Salvează raportul → 3. Identifică DTC → 4. Verifică aplicabilitatea → 5. Repară → 6. Basic Settings / Adaptation doar dacă procedura o cere.")); l.addWidget(panel); l.addStretch(); return w
 
-        footer = QLabel("v2.0 • 1996–2024\nLocal database")
-        footer.setObjectName("sideFooter")
-        side.addWidget(footer)
+    def page_search(self):
+        w=QWidget(); l=QVBoxLayout(w); l.setContentsMargins(0,0,0,0); l.addWidget(self.heading("Căutare globală","Caută în DTC, vehicule, module, coding și proceduri")); self.search_table=self.make_table(["Tip","Cheie","Titlu","Detalii"]); self.search_table.doubleClicked.connect(self.open_search_item); l.addWidget(self.search_table); return w
 
-        content = QFrame()
-        content.setObjectName("content")
-        content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(30, 24, 30, 24)
-        content_layout.setSpacing(18)
+    def page_vehicles(self):
+        w=QWidget(); l=QVBoxLayout(w); l.setContentsMargins(0,0,0,0); row=QHBoxLayout(); row.addWidget(self.heading("Vehicule","Catalog pe marcă, model, generație și platformă")); row.addStretch(); self.brand_filter=QComboBox(); self.brand_filter.addItems(["Toate","Volkswagen","Audi","Škoda","SEAT / Cupra"]); self.brand_filter.currentTextChanged.connect(self.load_vehicles); row.addWidget(self.brand_filter); l.addLayout(row); self.vehicle_table=self.make_table(["Marcă","Model","Generație","Ani","Platformă"]); l.addWidget(self.vehicle_table); return w
 
-        top = QHBoxLayout()
-        self.page_title = QLabel("Dashboard")
-        self.page_title.setObjectName("pageTitle")
-        self.global_search = QLineEdit()
-        self.global_search.setPlaceholderText("Caută DTC, model, generație, modul, coding...")
-        self.global_search.setMinimumWidth(430)
-        self.global_search.returnPressed.connect(self.run_global_search)
-        search_btn = QPushButton("Caută")
-        search_btn.setObjectName("primaryButton")
-        search_btn.clicked.connect(self.run_global_search)
-        top.addWidget(self.page_title)
-        top.addStretch()
-        top.addWidget(self.global_search)
-        top.addWidget(search_btn)
-        content_layout.addLayout(top)
+    def page_dtc(self):
+        w=QWidget(); l=QVBoxLayout(w); l.setContentsMargins(0,0,0,0); row=QHBoxLayout(); row.addWidget(self.heading("DTC Knowledge Base","Dublu-click pentru fișa completă")); row.addStretch(); self.severity_filter=QComboBox(); self.severity_filter.addItems(["Toate","Mediu","Ridicat","Critic"]); self.severity_filter.currentTextChanged.connect(self.load_dtc); row.addWidget(self.severity_filter); l.addLayout(row); self.dtc_table=self.make_table(["Cod","Descriere","Severitate","Status","Sursă"]); self.dtc_table.doubleClicked.connect(self.open_dtc); l.addWidget(self.dtc_table); return w
 
-        self.stack = QStackedWidget()
-        self.stack.addWidget(self.build_dashboard())
-        self.stack.addWidget(self.build_search_page())
-        self.stack.addWidget(self.build_vehicle_page())
-        self.stack.addWidget(self.build_dtc_page())
-        self.stack.addWidget(self.build_module_page())
-        self.stack.addWidget(self.build_coding_page())
-        self.stack.addWidget(self.build_procedure_page())
-        self.stack.addWidget(self.build_tools_page())
-        content_layout.addWidget(self.stack)
+    def page_modules(self):
+        w=QWidget(); l=QVBoxLayout(w); l.setContentsMargins(0,0,0,0); l.addWidget(self.heading("Module VAG","Adrese de diagnoză și familii de controlere")); self.module_table=self.make_table(["Adresă","Modul","Protocol","Familie"]); l.addWidget(self.module_table); return w
 
-        layout.addWidget(sidebar)
-        layout.addWidget(content, 1)
-        self.setCentralWidget(root)
-        self.open_page(0)
+    def page_coding(self):
+        w=QWidget(); l=QVBoxLayout(w); l.setContentsMargins(0,0,0,0); l.addWidget(self.heading("Coding VCDS","Opțiuni documentate cu aplicabilitate și metodă de revenire")); self.coding_table=self.make_table(["Funcție","Modul","Efect","Aplicabilitate","Revenire","Status"]); self.coding_table.doubleClicked.connect(self.open_coding); l.addWidget(self.coding_table); return w
 
-    def section_header(self, title, subtitle):
-        box = QWidget()
-        lay = QVBoxLayout(box)
-        lay.setContentsMargins(0, 0, 0, 0)
-        a = QLabel(title)
-        a.setObjectName("sectionTitle")
-        b = QLabel(subtitle)
-        b.setObjectName("sectionSub")
-        lay.addWidget(a)
-        lay.addWidget(b)
-        return box
+    def page_procedures(self):
+        w=QWidget(); l=QVBoxLayout(w); l.setContentsMargins(0,0,0,0); l.addWidget(self.heading("Proceduri","Proceduri pas cu pas și avertismente")); self.proc_table=self.make_table(["Titlu","Categorie","Status"]); self.proc_table.doubleClicked.connect(self.open_procedure); l.addWidget(self.proc_table); return w
 
-    def build_dashboard(self):
-        page = QWidget()
-        lay = QVBoxLayout(page)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.addWidget(self.section_header("Overview", "Baza VAG, acces rapid și starea conținutului"))
-        self.cards = QGridLayout()
-        self.card_widgets = {}
-        for i, key in enumerate(["Vehicule", "DTC", "Module", "Coding"]):
-            card = Card(key, "0", "înregistrări disponibile")
-            self.card_widgets[key] = card
-            self.cards.addWidget(card, 0, i)
-        lay.addLayout(self.cards)
+    def page_tools(self):
+        w=QWidget(); l=QVBoxLayout(w); l.setContentsMargins(0,0,0,0); l.addWidget(self.heading("Instrumente","Backup, export și locația datelor aplicației")); p=QFrame(); p.setObjectName("panel"); pl=QGridLayout(p)
+        actions=[("Backup SQLite",self.backup_db),("Export JSON",self.export_json),("Export DTC CSV",self.export_csv),("Deschide folder date",self.open_data_folder)]
+        for i,(txt,fn) in enumerate(actions): b=QPushButton(txt); b.setObjectName("toolButton"); b.clicked.connect(fn); pl.addWidget(b,i//2,i%2)
+        info=QLabel(f"Baza activă:\n{DB_PATH}"); info.setObjectName("muted"); pl.addWidget(info,2,0,1,2); l.addWidget(p); l.addStretch(); return w
 
-        quick = QLabel("Acces rapid")
-        quick.setObjectName("sectionTitle")
-        lay.addWidget(quick)
-        qrow = QHBoxLayout()
-        for text, page_index in [("Caută un DTC", 1), ("Deschide vehicule", 2), ("Vezi coding", 5), ("Proceduri", 6)]:
-            b = QPushButton(text)
-            b.setObjectName("actionButton")
-            b.clicked.connect(lambda checked=False, i=page_index: self.open_page(i))
-            qrow.addWidget(b)
-        lay.addLayout(qrow)
-
-        note = QFrame()
-        note.setObjectName("notice")
-        nl = QVBoxLayout(note)
-        nt = QLabel("Validare tehnică")
-        nt.setObjectName("noticeTitle")
-        nb = QLabel("Codările și procedurile model-specifice trebuie marcate ca verificate înainte de utilizarea pe o mașină reală. Aplicația păstrează separat informațiile demonstrative de cele validate.")
-        nb.setWordWrap(True)
-        nb.setObjectName("noticeBody")
-        nl.addWidget(nt)
-        nl.addWidget(nb)
-        lay.addWidget(note)
-        lay.addStretch()
-        return page
-
-    def new_table(self, headers):
-        t = QTableWidget(0, len(headers))
-        t.setHorizontalHeaderLabels(headers)
-        t.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
-        t.horizontalHeader().setStretchLastSection(True)
-        t.verticalHeader().setVisible(False)
-        t.setSelectionBehavior(QAbstractItemView.SelectRows)
-        t.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        t.setAlternatingRowColors(True)
-        return t
-
-    def build_search_page(self):
-        page = QWidget(); lay = QVBoxLayout(page); lay.setContentsMargins(0,0,0,0)
-        lay.addWidget(self.section_header("Căutare globală", "Caută simultan în DTC, vehicule, module, coding și proceduri"))
-        self.search_results = self.new_table(["Tip", "Cod / Cheie", "Titlu", "Detalii"])
-        self.search_results.doubleClicked.connect(self.open_search_result)
-        lay.addWidget(self.search_results)
-        return page
-
-    def build_vehicle_page(self):
-        page = QWidget(); lay = QVBoxLayout(page); lay.setContentsMargins(0,0,0,0)
-        lay.addWidget(self.section_header("Vehicule VAG", "Catalog pe marcă, model, generație și interval de ani"))
-        filter_row = QHBoxLayout()
-        self.brand_filter = QComboBox(); self.brand_filter.addItem("Toate mărcile")
-        self.brand_filter.addItems([r[0] for r in self.con.execute("SELECT DISTINCT brand FROM vehicles ORDER BY brand")])
-        self.brand_filter.currentTextChanged.connect(self.load_vehicles)
-        filter_row.addWidget(QLabel("Marcă:")); filter_row.addWidget(self.brand_filter); filter_row.addStretch()
-        lay.addLayout(filter_row)
-        self.vehicle_table = self.new_table(["Marcă", "Model", "Generație", "De la", "Până la"])
-        lay.addWidget(self.vehicle_table)
-        return page
-
-    def build_dtc_page(self):
-        page = QWidget(); lay = QVBoxLayout(page); lay.setContentsMargins(0,0,0,0)
-        lay.addWidget(self.section_header("Coduri de eroare", "DTC, simptome, cauze și direcții de diagnostic"))
-        self.dtc_table = self.new_table(["Cod", "Titlu", "Severitate", "Verificat"])
-        self.dtc_table.doubleClicked.connect(self.open_dtc_detail)
-        lay.addWidget(self.dtc_table)
-        hint = QLabel("Dublu-click pe un DTC pentru fișa completă.")
-        hint.setObjectName("hint")
-        lay.addWidget(hint)
-        return page
-
-    def build_module_page(self):
-        page = QWidget(); lay = QVBoxLayout(page); lay.setContentsMargins(0,0,0,0)
-        lay.addWidget(self.section_header("Module VCDS", "Adrese de diagnostic și protocoale uzuale"))
-        self.module_table = self.new_table(["Adresă", "Modul", "Protocol"])
-        lay.addWidget(self.module_table)
-        return page
-
-    def build_coding_page(self):
-        page = QWidget(); lay = QVBoxLayout(page); lay.setContentsMargins(0,0,0,0)
-        lay.addWidget(self.section_header("Coding & Adaptation", "Funcții documentate, aplicabilitate și stare de verificare"))
-        self.coding_table = self.new_table(["Funcție", "Modul", "Efect", "Aplicabilitate", "Verificat"])
-        lay.addWidget(self.coding_table)
-        return page
-
-    def build_procedure_page(self):
-        page = QWidget(); lay = QVBoxLayout(page); lay.setContentsMargins(0,0,0,0)
-        lay.addWidget(self.section_header("Proceduri", "Pași de diagnostic, coding și lucru sigur"))
-        self.procedure_table = self.new_table(["Titlu", "Categorie", "Verificat"])
-        self.procedure_table.doubleClicked.connect(self.open_procedure_detail)
-        lay.addWidget(self.procedure_table)
-        hint = QLabel("Dublu-click pentru pașii compleți și avertizări.")
-        hint.setObjectName("hint")
-        lay.addWidget(hint)
-        return page
-
-    def build_tools_page(self):
-        page = QWidget(); lay = QVBoxLayout(page); lay.setContentsMargins(0,0,0,0)
-        lay.addWidget(self.section_header("Instrumente", "Backup, export și întreținerea bazei locale"))
-        grid = QGridLayout()
-        actions = [
-            ("Backup bază de date", "Creează o copie .db a bazei locale", self.backup_database),
-            ("Export JSON", "Exportă tabelele principale într-un fișier JSON", self.export_json),
-            ("Reîncarcă datele", "Reîncarcă tabelele din SQLite", self.refresh_all),
-            ("Despre aplicație", "Informații despre versiune și scop", self.about_app),
-        ]
-        for i, (title, desc, handler) in enumerate(actions):
-            card = QFrame(); card.setObjectName("toolCard")
-            cl = QVBoxLayout(card)
-            tl = QLabel(title); tl.setObjectName("toolTitle")
-            dl = QLabel(desc); dl.setObjectName("toolDesc"); dl.setWordWrap(True)
-            btn = QPushButton("Deschide")
-            btn.setObjectName("actionButton")
-            btn.clicked.connect(handler)
-            cl.addWidget(tl); cl.addWidget(dl); cl.addStretch(); cl.addWidget(btn)
-            grid.addWidget(card, i // 2, i % 2)
-        lay.addLayout(grid)
-        lay.addStretch()
-        return page
-
-    def open_page(self, index):
-        titles = ["Dashboard", "Căutare", "Vehicule", "DTC", "Module", "Coding", "Proceduri", "Instrumente"]
-        self.stack.setCurrentIndex(index)
-        self.page_title.setText(titles[index])
-        for i, b in enumerate(self.nav_buttons):
-            b.setChecked(i == index)
-
-    def fill_table(self, table, rows):
-        table.setRowCount(len(rows))
-        for i, row in enumerate(rows):
-            for j, value in enumerate(row):
-                item = QTableWidgetItem("" if value is None else str(value))
-                table.setItem(i, j, item)
+    def open_page(self,index):
+        self.stack.setCurrentIndex(index); self.page_title.setText(self.PAGES[index])
+        for i,b in enumerate(self.nav): b.setChecked(i==index)
 
     def refresh_all(self):
-        self.load_vehicles()
-        self.fill_table(self.dtc_table, self.con.execute("SELECT code,title,severity,CASE verified WHEN 1 THEN 'DA' ELSE 'NU' END FROM dtc ORDER BY code").fetchall())
-        self.fill_table(self.module_table, self.con.execute("SELECT address,name,protocol FROM modules ORDER BY address").fetchall())
-        self.fill_table(self.coding_table, self.con.execute("SELECT title,module,effect,applicability,CASE verified WHEN 1 THEN 'DA' ELSE 'NU' END FROM coding ORDER BY title").fetchall())
-        self.fill_table(self.procedure_table, self.con.execute("SELECT title,category,CASE verified WHEN 1 THEN 'DA' ELSE 'NU' END FROM procedures ORDER BY category,title").fetchall())
-        counts = {
-            "Vehicule": self.con.execute("SELECT COUNT(*) FROM vehicles").fetchone()[0],
-            "DTC": self.con.execute("SELECT COUNT(*) FROM dtc").fetchone()[0],
-            "Module": self.con.execute("SELECT COUNT(*) FROM modules").fetchone()[0],
-            "Coding": self.con.execute("SELECT COUNT(*) FROM coding").fetchone()[0],
-        }
-        for key, card in self.card_widgets.items():
-            card.findChild(QLabel, "cardValue").setText(str(counts[key]))
-        self.statusBar().showMessage("Date reîncărcate cu succes", 3000)
-
+        self.load_vehicles(); self.load_dtc(); self.fill(self.module_table,[(r['address'],r['name'],r['protocol'],r['family']) for r in self.con.execute("SELECT * FROM modules ORDER BY address")]); self.load_coding(); self.load_procedures(); self.update_stats()
+    def update_stats(self):
+        counts={"Vehicule":self.con.execute("SELECT COUNT(*) FROM vehicles").fetchone()[0],"DTC":self.con.execute("SELECT COUNT(*) FROM dtc").fetchone()[0],"Module":self.con.execute("SELECT COUNT(*) FROM modules").fetchone()[0],"Coding":self.con.execute("SELECT COUNT(*) FROM coding").fetchone()[0]}
+        for k,v in counts.items(): self.stats[k].value.setText(str(v))
     def load_vehicles(self):
-        if not hasattr(self, "vehicle_table"):
-            return
-        brand = self.brand_filter.currentText() if hasattr(self, "brand_filter") else "Toate mărcile"
-        if brand == "Toate mărcile":
-            rows = self.con.execute("SELECT brand,model,generation,year_from,year_to FROM vehicles ORDER BY brand,model,year_from").fetchall()
-        else:
-            rows = self.con.execute("SELECT brand,model,generation,year_from,year_to FROM vehicles WHERE brand=? ORDER BY model,year_from", (brand,)).fetchall()
-        self.fill_table(self.vehicle_table, rows)
+        brand=self.brand_filter.currentText() if hasattr(self,'brand_filter') else "Toate"; sql="SELECT brand,model,generation,year_from,year_to,platform FROM vehicles"; p=[]
+        if brand!="Toate": sql+=" WHERE brand=?"; p=[brand]
+        sql+=" ORDER BY brand,model,year_from"; self.fill(self.vehicle_table,[(r['brand'],r['model'],r['generation'],f"{r['year_from']}–{r['year_to']}",r['platform']) for r in self.con.execute(sql,p)])
+    def load_dtc(self):
+        sev=self.severity_filter.currentText() if hasattr(self,'severity_filter') else "Toate"; sql="SELECT * FROM dtc"; p=[]
+        if sev!="Toate": sql+=" WHERE severity=?"; p=[sev]
+        sql+=" ORDER BY code"; self.fill(self.dtc_table,[(r['code'],r['title'],r['severity'],"Verificat" if r['verified'] else "De verificat",r['source']) for r in self.con.execute(sql,p)])
+    def load_coding(self): self.fill(self.coding_table,[(r['title'],r['module'],r['effect'],r['applicability'],r['restore_method'],"Verificat" if r['verified'] else "De verificat") for r in self.con.execute("SELECT * FROM coding ORDER BY module,title")])
+    def load_procedures(self): self.fill(self.proc_table,[(r['title'],r['category'],"Verificat" if r['verified'] else "De verificat") for r in self.con.execute("SELECT * FROM procedures ORDER BY category,title")])
 
-    def run_global_search(self):
-        term = self.global_search.text().strip()
-        if not term:
-            QMessageBox.information(self, "Căutare", "Scrie un cod DTC, model, modul sau funcție.")
-            return
-        q = f"%{term}%"
-        rows = []
-        rows += [("DTC", r[0], r[1], r[2]) for r in self.con.execute("SELECT code,title,description FROM dtc WHERE code LIKE ? OR title LIKE ? OR description LIKE ?", (q,q,q))]
-        rows += [("VEHICUL", f"{r[0]} {r[1]}", r[2], f"{r[3]}–{r[4]}") for r in self.con.execute("SELECT brand,model,generation,year_from,year_to FROM vehicles WHERE brand LIKE ? OR model LIKE ? OR generation LIKE ?", (q,q,q))]
-        rows += [("MODUL", r[0], r[1], r[2]) for r in self.con.execute("SELECT address,name,protocol FROM modules WHERE address LIKE ? OR name LIKE ?", (q,q))]
-        rows += [("CODING", str(r[0]), r[1], r[2]) for r in self.con.execute("SELECT id,title,effect FROM coding WHERE title LIKE ? OR module LIKE ? OR effect LIKE ?", (q,q,q))]
-        rows += [("PROCEDURĂ", str(r[0]), r[1], r[2]) for r in self.con.execute("SELECT id,title,category FROM procedures WHERE title LIKE ? OR category LIKE ? OR steps LIKE ?", (q,q,q))]
-        self.fill_table(self.search_results, rows)
-        self.open_page(1)
-        self.statusBar().showMessage(f"{len(rows)} rezultate pentru «{term}»", 4000)
+    def global_search(self):
+        q=self.search.text().strip();
+        if not q: return
+        like=f"%{q}%"; out=[]
+        out += [("DTC",r['code'],r['title'],r['description']) for r in self.con.execute("SELECT * FROM dtc WHERE code LIKE ? OR title LIKE ? OR description LIKE ?",(like,like,like))]
+        out += [("Vehicul",r['model'],r['generation'],f"{r['brand']} • {r['platform']}") for r in self.con.execute("SELECT * FROM vehicles WHERE brand LIKE ? OR model LIKE ? OR generation LIKE ? OR platform LIKE ?",(like,like,like,like))]
+        out += [("Modul",r['address'],r['name'],r['protocol']) for r in self.con.execute("SELECT * FROM modules WHERE address LIKE ? OR name LIKE ? OR family LIKE ?",(like,like,like))]
+        out += [("Coding",str(r['id']),r['title'],r['module']) for r in self.con.execute("SELECT * FROM coding WHERE title LIKE ? OR module LIKE ? OR effect LIKE ?",(like,like,like))]
+        out += [("Procedură",str(r['id']),r['title'],r['category']) for r in self.con.execute("SELECT * FROM procedures WHERE title LIKE ? OR category LIKE ? OR steps LIKE ?",(like,like,like))]
+        self.fill(self.search_table,out); self.open_page(1); self.statusBar().showMessage(f"{len(out)} rezultate pentru «{q}»",5000)
+    def open_search_item(self,index):
+        t=self.search_table.item(index.row(),0).text(); key=self.search_table.item(index.row(),1).text()
+        if t=="DTC": self.show_dtc(key)
+    def open_dtc(self,index): self.show_dtc(self.dtc_table.item(index.row(),0).text())
+    def show_dtc(self,code):
+        r=self.con.execute("SELECT * FROM dtc WHERE code=?",(code,)).fetchone();
+        if not r:return
+        body=f"COD: {r['code']}\nTITLU: {r['title']}\nSEVERITATE: {r['severity']}\nSTATUS: {'Verificat' if r['verified'] else 'De verificat'}\nSURSA: {r['source']}\n\nDESCRIERE\n{r['description']}\n\nSIMPTOME\n{r['symptoms']}\n\nCAUZE POSIBILE\n{r['causes']}\n\nDIAGNOSTIC / REPARAȚIE\n{r['repair']}\n\nNotă: aplicabilitatea exactă depinde de vehicul, motor, ECU și versiunea software."
+        DetailDialog(f"{r['code']} • {r['title']}",body,self).exec()
+    def open_coding(self,index):
+        title=self.coding_table.item(index.row(),0).text(); r=self.con.execute("SELECT * FROM coding WHERE title=?",(title,)).fetchone();
+        if r: DetailDialog(title,f"MODUL\n{r['module']}\n\nEFECT\n{r['effect']}\n\nAPLICABILITATE\n{r['applicability']}\n\nREVENIRE\n{r['restore_method']}\n\nSTATUS\n{'Verificat' if r['verified'] else 'De verificat'}",self).exec()
+    def open_procedure(self,index):
+        title=self.proc_table.item(index.row(),0).text(); r=self.con.execute("SELECT * FROM procedures WHERE title=?",(title,)).fetchone();
+        if r: DetailDialog(title,f"CATEGORIE\n{r['category']}\n\nPAȘI\n{r['steps']}\n\nAVERTISMENTE\n{r['warnings']}\n\nSTATUS\n{'Verificat' if r['verified'] else 'De verificat'}",self).exec()
 
-    def open_search_result(self, index):
-        row = index.row()
-        typ = self.search_results.item(row, 0).text()
-        key = self.search_results.item(row, 1).text()
-        if typ == "DTC":
-            r = self.con.execute("SELECT code,title,description,severity,symptoms,causes,repair,verified FROM dtc WHERE code=?", (key,)).fetchone()
-            if r: self.show_dtc(r)
-        else:
-            title = self.search_results.item(row, 2).text()
-            details = self.search_results.item(row, 3).text()
-            DetailDialog(f"{typ}: {title}", details, self).exec()
-
-    def open_dtc_detail(self, index):
-        code = self.dtc_table.item(index.row(), 0).text()
-        r = self.con.execute("SELECT code,title,description,severity,symptoms,causes,repair,verified FROM dtc WHERE code=?", (code,)).fetchone()
-        if r: self.show_dtc(r)
-
-    def show_dtc(self, r):
-        body = (
-            f"Cod: {r['code']}\nTitlu: {r['title']}\nSeveritate: {r['severity']}\nVerificat: {'DA' if r['verified'] else 'NU'}\n\n"
-            f"DESCRIERE\n{r['description']}\n\nSIMPTOME\n{r['symptoms']}\n\nCAUZE POSIBILE\n{r['causes']}\n\nDIRECȚIE DE DIAGNOSTIC / REPARAȚIE\n{r['repair']}\n\n"
-            "Notă: confirmă întotdeauna procedura pentru motorul, ECU-ul și software-ul vehiculului înainte de intervenție."
-        )
-        DetailDialog(f"{r['code']} — {r['title']}", body, self).exec()
-
-    def open_procedure_detail(self, index):
-        title = self.procedure_table.item(index.row(), 0).text()
-        r = self.con.execute("SELECT title,category,steps,warnings,verified FROM procedures WHERE title=?", (title,)).fetchone()
-        if not r: return
-        body = f"Categorie: {r['category']}\nVerificat: {'DA' if r['verified'] else 'NU'}\n\nPAȘI\n{r['steps']}\n\nAVERTIZĂRI\n{r['warnings']}"
-        DetailDialog(r['title'], body, self).exec()
-
-    def backup_database(self):
-        dest, _ = QFileDialog.getSaveFileName(self, "Salvează backup", f"vag_master_backup_{datetime.now():%Y%m%d_%H%M%S}.db", "SQLite (*.db)")
-        if not dest: return
-        self.con.commit()
-        shutil.copy2(DB_PATH, dest)
-        QMessageBox.information(self, "Backup", "Backup-ul bazei de date a fost creat.")
-
+    def backup_db(self):
+        f,_=QFileDialog.getSaveFileName(self,"Backup database",f"vag_master_backup_{datetime.now():%Y%m%d_%H%M%S}.db","SQLite (*.db)")
+        if f: self.con.commit(); shutil.copy2(DB_PATH,f); QMessageBox.information(self,"Backup","Backup creat cu succes.")
     def export_json(self):
-        dest, _ = QFileDialog.getSaveFileName(self, "Export JSON", "vag_master_export.json", "JSON (*.json)")
-        if not dest: return
-        out = {}
-        for table in ["dtc", "vehicles", "modules", "coding", "procedures"]:
-            out[table] = [dict(r) for r in self.con.execute(f"SELECT * FROM {table}")]
-        Path(dest).write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
-        QMessageBox.information(self, "Export", "Exportul JSON a fost creat.")
-
-    def about_app(self):
-        QMessageBox.information(self, "Despre", "VAG MASTER Diagnostic PRO v2.0\n\nAplicație desktop Python + PySide6 + SQLite pentru structurarea unei baze VAG 1996–2024.\n\nInterfață și funcții reconstruite.")
+        f,_=QFileDialog.getSaveFileName(self,"Export JSON","vag_master_export.json","JSON (*.json)")
+        if not f:return
+        tables=["dtc","vehicles","modules","coding","procedures"]; data={t:[dict(r) for r in self.con.execute(f"SELECT * FROM {t}")] for t in tables}; Path(f).write_text(json.dumps(data,ensure_ascii=False,indent=2),encoding="utf-8"); QMessageBox.information(self,"Export","Export JSON finalizat.")
+    def export_csv(self):
+        f,_=QFileDialog.getSaveFileName(self,"Export DTC CSV","dtc_export.csv","CSV (*.csv)")
+        if not f:return
+        rows=self.con.execute("SELECT code,title,severity,verified,source FROM dtc ORDER BY code").fetchall()
+        with open(f,"w",newline="",encoding="utf-8-sig") as h:
+            w=csv.writer(h); w.writerow(["Code","Title","Severity","Verified","Source"]); w.writerows(rows)
+        QMessageBox.information(self,"Export","Export CSV finalizat.")
+    def open_data_folder(self): QDesktopServices.openUrl(QUrl.fromLocalFile(str(app_data_dir())))
 
     def apply_style(self):
-        self.setStyleSheet('''
-        * { font-family: "Segoe UI", "Arial"; }
-        QMainWindow, #content { background: #0b1220; }
-        #sidebar { background: #08101d; border-right: 1px solid #1e293b; }
-        #brandName { color: #f8fafc; font-size: 20px; font-weight: 800; }
-        #brandSub { color: #60a5fa; font-size: 10px; font-weight: 700; letter-spacing: 1px; }
-        #sideFooter { color: #64748b; font-size: 11px; }
-        QPushButton#navButton { text-align: left; color: #94a3b8; background: transparent; border: 0; border-radius: 10px; padding: 12px 14px; font-size: 14px; }
-        QPushButton#navButton:hover { color: #f8fafc; background: #111c2f; }
-        QPushButton#navButton:checked { color: #ffffff; background: #172554; border-left: 3px solid #60a5fa; }
-        #pageTitle { color: #f8fafc; font-size: 26px; font-weight: 800; }
-        #sectionTitle { color: #f8fafc; font-size: 18px; font-weight: 700; }
-        #sectionSub { color: #94a3b8; font-size: 12px; }
-        QLineEdit { color: #f8fafc; background: #0f172a; border: 1px solid #334155; border-radius: 10px; padding: 11px 13px; selection-background-color: #2563eb; }
-        QLineEdit:focus { border: 1px solid #60a5fa; }
-        QPushButton#primaryButton { color: white; background: #2563eb; border: 0; border-radius: 10px; padding: 11px 18px; font-weight: 700; }
-        QPushButton#primaryButton:hover { background: #3b82f6; }
-        QPushButton#actionButton { color: #e2e8f0; background: #111c2f; border: 1px solid #263449; border-radius: 10px; padding: 11px 16px; }
-        QPushButton#actionButton:hover { background: #1e293b; border-color: #60a5fa; }
-        QFrame#card, QFrame#toolCard { background: #0f172a; border: 1px solid #1e293b; border-radius: 14px; min-height: 120px; }
-        #cardTitle { color: #94a3b8; font-size: 12px; }
-        #cardValue { color: #f8fafc; font-size: 30px; font-weight: 800; }
-        #cardSub { color: #64748b; font-size: 11px; }
-        #toolTitle { color: #f8fafc; font-size: 16px; font-weight: 700; }
-        #toolDesc { color: #94a3b8; }
-        QFrame#notice { background: #111827; border: 1px solid #273449; border-radius: 12px; }
-        #noticeTitle { color: #93c5fd; font-size: 14px; font-weight: 700; }
-        #noticeBody { color: #cbd5e1; }
-        QTableWidget { color: #e2e8f0; background: #0f172a; alternate-background-color: #111827; border: 1px solid #1e293b; border-radius: 10px; gridline-color: #1e293b; selection-background-color: #1d4ed8; selection-color: white; }
-        QHeaderView::section { color: #cbd5e1; background: #111827; border: 0; border-bottom: 1px solid #334155; padding: 10px; font-weight: 700; }
-        QComboBox { color: #e2e8f0; background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 8px 12px; }
-        QLabel { color: #e2e8f0; }
-        QLabel#hint { color: #64748b; font-size: 11px; }
-        QLabel#dialogTitle { color: #f8fafc; font-size: 20px; font-weight: 800; }
-        QTextEdit { color: #e2e8f0; background: #0f172a; border: 1px solid #334155; border-radius: 10px; padding: 10px; }
-        QDialog { background: #0b1220; }
-        QStatusBar { color: #94a3b8; background: #08101d; }
-        ''')
+        self.setStyleSheet("""
+        QMainWindow,QWidget{background:#0b1220;color:#dbe7f5;font-family:'Segoe UI',Arial;font-size:13px}
+        QFrame#sidebar{background:#0a1020;border-right:1px solid #1d2a3d}
+        QFrame#content{background:#0d1525}
+        QLabel#brand{font-size:19px;font-weight:800;color:#f8fbff} QLabel#brandSub{font-size:10px;font-weight:700;color:#5fa8ff;letter-spacing:2px}
+        QLabel#version{color:#64748b;font-size:11px;padding:8px} QLabel#pageTitle{font-size:25px;font-weight:800;color:#f8fbff}
+        QLabel#sectionTitle{font-size:18px;font-weight:750;color:#eef6ff} QLabel#muted{color:#7f93ab} QLabel#panelTitle{font-size:15px;font-weight:700}
+        QLabel#statLabel{color:#8ea3ba;font-weight:600} QLabel#statValue{font-size:28px;font-weight:850;color:#f8fbff}
+        QPushButton#nav{background:transparent;border:0;border-radius:8px;text-align:left;padding:12px 14px;color:#91a4ba;font-weight:600}
+        QPushButton#nav:hover{background:#111c31;color:#e8f2ff} QPushButton#nav:checked{background:#14243e;color:#70b4ff;border-left:3px solid #3b82f6}
+        QPushButton#primary{background:#2563eb;border:0;border-radius:8px;padding:10px 18px;color:white;font-weight:700} QPushButton#primary:hover{background:#3478f6}
+        QPushButton#toolButton{background:#111d31;border:1px solid #253650;border-radius:10px;padding:18px;text-align:left;font-weight:700} QPushButton#toolButton:hover{border-color:#3b82f6;background:#14243e}
+        QLineEdit,QComboBox{background:#0a1120;border:1px solid #24334a;border-radius:8px;padding:10px 12px;color:#e5eef9} QLineEdit:focus,QComboBox:focus{border:1px solid #3b82f6}
+        QFrame#statCard,QFrame#panel{background:#101a2c;border:1px solid #1f3048;border-radius:12px}
+        QTableWidget{background:#0d1627;alternate-background-color:#101b2e;border:1px solid #1d2d44;border-radius:10px;gridline-color:#18273b;selection-background-color:#17345c;selection-color:#fff}
+        QHeaderView::section{background:#101b2d;color:#8fa6bf;border:0;border-bottom:1px solid #263851;padding:10px;font-weight:700}
+        QTableWidget::item{padding:7px;border:0} QScrollBar:vertical{background:#0b1322;width:10px} QScrollBar::handle:vertical{background:#2a3c55;border-radius:5px;min-height:30px}
+        QStatusBar{background:#09101d;color:#6f839b;border-top:1px solid #1b293c} QTextEdit{background:#0a1120;border:1px solid #253650;border-radius:8px;padding:12px;color:#dce8f7} QLabel#dialogTitle{font-size:18px;font-weight:800}
+        """)
 
 
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    app.setApplicationName("VAG MASTER Diagnostic PRO")
-    app.setStyle("Fusion")
-    window = MainWindow()
-    window.show()
-    sys.exit(app.exec())
+def main():
+    app=QApplication(sys.argv); app.setApplicationName(APP_NAME); app.setOrganizationName("VAG MASTER"); app.setStyle("Fusion")
+    w=MainWindow(); w.show(); return app.exec()
+
+
+if __name__=="__main__":
+    raise SystemExit(main())
