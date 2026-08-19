@@ -1,0 +1,19 @@
+# REPRESENTATIVE / SYNTHETIC VCDS FIXTURE - PQ35/PQ46
+Address 01: Engine
+1 Fault Found:
+000665 - Boost Pressure Regulation
+            P0299 - 000 - Control Range Not Reached
+Address 03: ABS Brakes
+1 Fault Found:
+01486 - System Function Test Activated
+            000 - Static
+Address 09: Cent. Elect.
+1 Fault Found:
+00978 - Lamp for Low Beam; Left (M29)
+            010 - Open or Short to Plus - Intermittent
+Address 19: CAN Gateway
+1 Fault Found:
+01312 - Powertrain Data Bus
+            004 - No Signal/Communication - Intermittent
+Address 53: Parking Brake
+No fault code found.
