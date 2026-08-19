@@ -16,6 +16,7 @@ from model_specific_pack_2 import install as install_model_specific_2
 from battery_visibility_pack import install as install_battery_visibility
 from engine_battery_fix_pack import install as install_engine_battery_fix
 from catalog_complete_1996_2024 import install as install_catalog_complete
+from vag_1996_2024_coverage_expansion import install as install_vag_coverage_expansion
 from long_coding_master_pack import install as install_long_coding_master
 from autoscan_dtc_pack import install as install_autoscan_dtc
 from autoscan_dtc_expansion_2 import install as install_autoscan_dtc_expansion_2
@@ -58,6 +59,7 @@ def main():
         install_supermaster(con)
         install_1996_2024(con)
         install_catalog_complete(con)
+        install_vag_coverage_expansion(con)
         install_supermaster(con)
         install_expert_data(con)
         install_replacement_calibration(con)
