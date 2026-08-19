@@ -38,7 +38,6 @@ def _diagnosis_blocks(plans, corr):
     checks = []
     parts = []
 
-    # Prefer correlation-ranked primary faults.
     for score, idx, fault, plan in primary[:4]:
         code = getattr(fault, "code", "") or getattr(fault, "vag_code", "") or "DTC"
         title = plan.get("title") or getattr(fault, "title", "") or "Eroare de diagnosticat"
@@ -48,7 +47,6 @@ def _diagnosis_blocks(plans, corr):
         if plan.get("component"):
             parts.append(plan.get("component"))
 
-    # If correlation did not rank anything, use the first indexed plans.
     if not probable:
         for fault, plan in plans[:4]:
             code = getattr(fault, "code", "") or getattr(fault, "vag_code", "") or "DTC"
@@ -56,12 +54,29 @@ def _diagnosis_blocks(plans, corr):
             checks.append(plan.get("diagnosis", ""))
             parts.append(plan.get("component", ""))
 
-    # Common causes are more useful than repeating individual checks.
     common = (corr or {}).get("common_causes", [])
     common_checks = [f"{title}: {text}" for title, text in common]
     checks = common_checks + checks
 
     return _unique(probable, 4), _unique(checks, 4), _unique(parts, 6)
+
+
+def _validation_text(result):
+    state = getattr(result, "validation_ok", None)
+    msg = getattr(result, "validation_message", "") or "Validarea parsării nu este disponibilă."
+    details = getattr(result, "validation_details", []) or []
+    if state is True:
+        prefix = "✓ CITIRE COMPLETĂ"
+    elif state is False:
+        prefix = "⚠ CITIRE INCOMPLETĂ / NECONCORDANȚĂ"
+    else:
+        prefix = "ℹ VALIDARE LIMITATĂ"
+    lines = [f"{prefix}: {msg}"]
+    for d in details[:5]:
+        lines.append(f"• {d}")
+    if len(details) > 5:
+        lines.append(f"• +{len(details)-5} alte neconcordanțe pe module")
+    return "\n".join(lines)
 
 
 def _body(result, corr, plans):
@@ -85,6 +100,7 @@ def _body(result, corr, plans):
     return (
         f"Raport: {Path(result.source_path).name}   |   Module detectate: {len(modules)}\n"
         f"Coduri: {codes_text}\n\n"
+        f"VALIDARE CITIRE AUTO-SCAN\n{_validation_text(result)}\n\n"
         f"CE ARE PROBABIL MAȘINA\n{probable_text}\n\n"
         f"CE VERIFICI PRIMA DATĂ\n{checks_text}\n\n"
         f"PIESE / SISTEME SUSPECTE\n{parts_text}\n\n"
@@ -133,6 +149,18 @@ def apply(MainWindow):
         count = len(getattr(result, "faults", []) or [])
         self.autoscan_result_headline.setText(_headline(corr, count))
         self.autoscan_result_body.setText(_body(result, corr, plans))
+        if getattr(result, "validation_ok", None) is False:
+            self.autoscan_result_focus.setStyleSheet(
+                "QFrame#autoscanResultFocus { background:#2a1d1d; border:3px solid #e06a6a; border-radius:12px; }"
+                "QLabel#autoscanResultHeadline { color:#ffffff; font-size:19px; font-weight:800; }"
+                "QLabel#autoscanResultBody { color:#f7e8e8; font-size:14px; line-height:1.25; }"
+            )
+        else:
+            self.autoscan_result_focus.setStyleSheet(
+                "QFrame#autoscanResultFocus { background:#172331; border:2px solid #36a9e1; border-radius:12px; }"
+                "QLabel#autoscanResultHeadline { color:#ffffff; font-size:19px; font-weight:800; }"
+                "QLabel#autoscanResultBody { color:#dceaf5; font-size:14px; line-height:1.25; }"
+            )
         self.autoscan_result_focus.show()
 
     def reset_autoscan_ui(self):
