@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QApplication
 from appdb import APP_NAME, APP_VERSION, connect_db
 from supermaster_expansion import install as install_supermaster
 from vag_1996_2024_pack import install as install_1996_2024
+from expert_data_pack import install as install_expert_data
 
 # Compatibility hotfix for the current v5 seed data.
 if not hasattr(appdb, "src_diag"):
@@ -24,13 +25,10 @@ def main():
 
     con = connect_db()
     try:
-        # 1) Load the common Super Master library.
         install_supermaster(con)
-        # 2) Add/extend the VAG catalog through model year 2024 plus expert records.
         install_1996_2024(con)
-        # 3) Re-run the idempotent mapper so newly-added generations receive
-        #    the common library as well as their exact/conditional records.
         install_supermaster(con)
+        install_expert_data(con)
     finally:
         con.close()
 
