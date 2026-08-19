@@ -17,6 +17,7 @@ from battery_visibility_pack import install as install_battery_visibility
 from engine_battery_fix_pack import install as install_engine_battery_fix
 from catalog_complete_1996_2024 import install as install_catalog_complete
 from vag_1996_2024_coverage_expansion import install as install_vag_coverage_expansion
+from all_platforms_models_expansion import install as install_all_platforms_models
 from transmission_procedures_expansion import install as install_transmission_procedures
 from engine_procedures_expansion import install as install_engine_procedures
 from brake_steering_procedures_expansion import install as install_brake_steering_procedures
@@ -70,6 +71,7 @@ def main():
         install_1996_2024(con)
         install_catalog_complete(con)
         install_vag_coverage_expansion(con)
+        install_all_platforms_models(con)
         install_transmission_procedures(con)
         install_engine_procedures(con)
         install_brake_steering_procedures(con)
