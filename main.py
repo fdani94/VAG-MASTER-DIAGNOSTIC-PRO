@@ -15,6 +15,8 @@ from model_specific_pack import install as install_model_specific
 from model_specific_pack_2 import install as install_model_specific_2
 from battery_visibility_pack import install as install_battery_visibility
 from engine_battery_fix_pack import install as install_engine_battery_fix
+from catalog_complete_1996_2024 import install as install_catalog_complete
+from long_coding_master_pack import install as install_long_coding_master
 
 # Compatibility hotfix for the current v5 seed data.
 if not hasattr(appdb, "src_diag"):
@@ -22,9 +24,11 @@ if not hasattr(appdb, "src_diag"):
 
 from ui_pro import MainWindow
 from ui_expert_patch import apply as apply_expert_ui
+from ui_long_coding_page import apply as apply_long_coding_page
 from ui_vag_light_theme import apply as apply_vag_light_theme
 
 apply_expert_ui(MainWindow)
+apply_long_coding_page(MainWindow)
 apply_vag_light_theme(MainWindow)
 
 
@@ -32,12 +36,13 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(APP_VERSION)
-    app.setOrganizationName("VAG MASTER")
+    app.setOrganizationName("KID Diagnostic")
 
     con = connect_db()
     try:
         install_supermaster(con)
         install_1996_2024(con)
+        install_catalog_complete(con)
         install_supermaster(con)
         install_expert_data(con)
         install_replacement_calibration(con)
@@ -49,6 +54,7 @@ def main():
         install_model_specific_2(con)
         install_battery_visibility(con)
         install_engine_battery_fix(con)
+        install_long_coding_master(con)
     finally:
         con.close()
 
