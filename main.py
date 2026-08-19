@@ -13,6 +13,7 @@ from community_coding_pack import install as install_community_coding
 from vcds_workshop_pack import install as install_vcds_workshop
 from model_specific_pack import install as install_model_specific
 from model_specific_pack_2 import install as install_model_specific_2
+from battery_visibility_pack import install as install_battery_visibility
 
 # Compatibility hotfix for the current v5 seed data.
 if not hasattr(appdb, "src_diag"):
@@ -45,6 +46,7 @@ def main():
         install_vcds_workshop(con)
         install_model_specific(con)
         install_model_specific_2(con)
+        install_battery_visibility(con)
     finally:
         con.close()
 
