@@ -1,0 +1,108 @@
+VCDS
+Self-Diagnosis Log
+VIN: TESTVIN8K00000001 License Plate: REDACTED
+Mileage: 326200km
+Chassis Type: 8K-AU48 (8T0)
+Scan: 01 03 05 08 09 10 15 16 17 19 42 46 52 53 56 62 72 77
+
+Address 01: Engine (J623-CAGA)
+ Component: R4 2,0L EDC
+6 Faults Found
+4875 - Coolant Pump 2
+ P261A 00 - Open circuit
+ MIL ON - Intermittent - Confirmed
+ Freeze Frame:
+ Fault Priority: 2
+ Fault Frequency: 1
+ Mileage: 325005 km
+4984 - Cylinder 1 Glow Plug Circuit (Q10)
+ P0671 00 - Electrical Fault
+ Not Confirmed
+4985 - Cylinder 2 Glow Plug Circuit (Q11)
+ P0672 00 - Electrical Fault
+ Not Confirmed
+4986 - Cylinder 3 Glow Plug Circuit (Q12)
+ P0673 00 - Electrical Fault
+ Not Confirmed
+4987 - Cylinder 4 Glow Plug Circuit (Q13)
+ P0674 00 - Electrical Fault
+ Not Confirmed
+5120 - Oxygen (Lambda) Sensor B1 S1
+ P2196 00 - Signal too High (Rich)
+ MIL ON - Confirmed
+
+Address 03: ABS Brakes (J104)
+ Component: ESP8 front
+No fault code found.
+
+Address 05: Acc/Start Auth. (J393)
+ Component: BCM2 1.1
+1 Fault Found
+00955 - Key 1
+ 002 - Lower Limit Exceeded - Intermittent
+
+Address 08: Auto HVAC (J255)
+ Component: KLIMA 1 ZONE
+No fault code found.
+
+Address 09: Cent. Elect. (J519)
+ Component: BCM1 1.0
+No fault code found.
+
+Address 10: Park/Steer Assist (J446)
+No fault code found.
+
+Address 15: Airbags (J234)
+No fault code found.
+
+Address 16: Steering wheel (J527)
+No fault code found.
+
+Address 17: Instruments (J285)
+No fault code found.
+
+Address 19: CAN Gateway (J533)
+ Component: GW-BEM 5CAN
+1 Fault Found
+03041 - Energy Management Active
+ 000 - - Intermittent
+
+Address 42: Door Elect, Driver
+No fault code found.
+
+Address 46: Central Conv. (J393)
+ Component: BCM2 1.1
+3 Faults Found
+02615 - Fuel Tank Cap; Lock
+ 009 - Open or Short to Ground
+02616 - Fuel Tank Cap; Unlock
+ 009 - Open or Short to Ground
+01699 - Motor for Central Locking; Hatch/Trunk (V53)
+ 009 - Open or Short to Ground - Intermittent
+
+Address 52: Door Elect, Pass.
+1 Fault Found
+02115 - Locking Unit for Central Locking
+ 008 - Implausible Signal
+
+Address 53: Parking Brake
+No fault code found.
+
+Address 56: Radio
+1 Fault Found
+02095 - Component Protection Active
+ 000 - -
+
+Address 62: Door, Rear Left
+No fault code found.
+
+Address 72: Door, Rear Right (J389)
+1 Fault Found
+02115 - Locking Unit for Central Locking
+ 008 - Implausible Signal
+
+Address 77: Telephone
+No fault code found.
+
+End----------(Elapsed Time: 01:14, VBatt start/end: 11.6V/11.6V)-----------
+------------------------------14 Faults Found------------------------------
