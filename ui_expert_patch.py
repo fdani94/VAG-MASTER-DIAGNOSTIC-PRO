@@ -1,14 +1,14 @@
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QLineEdit, QPushButton,
-    QSplitter, QFrame, QTextEdit, QHeaderView
+    QSplitter, QFrame, QTextEdit
 )
 
 
 CATEGORY_ORDER = [
     "Toate", "Proceduri", "Diagnostic", "Parametri live", "Adaptation",
-    "Resetări", "Long Coding", "Coding", "Basic Settings", "Output Tests",
-    "Security Access", "Service", "Frâne", "Motor", "Transmisie"
+    "Calibrări", "Resetări", "Long Coding", "Coding", "Basic Settings",
+    "Output Tests", "Security Access", "Service", "Frâne", "Motor", "Transmisie"
 ]
 
 
@@ -23,7 +23,7 @@ def apply(MainWindow):
         title.setObjectName("sectionTitle")
         hint = QLabel(
             "Alege o categorie. Sunt afișate numai procedurile mapate pe generația selectată. "
-            "Pentru UDS, aplicația afișează denumirea IDE/MAS când este documentată; pentru modulele CAN/KWP, Group/Channel/Byte/Bit când sursa îl confirmă."
+            "Pe UDS se folosesc denumiri IDE/MAS când sunt documentate; pe CAN/KWP sunt afișate Group/Channel/Byte/Bit când sursa le confirmă."
         )
         hint.setWordWrap(True)
         hint.setObjectName("muted")
@@ -32,11 +32,17 @@ def apply(MainWindow):
 
         chips = QHBoxLayout()
         self.category_buttons = []
-        for name in ["Proceduri", "Adaptation", "Resetări", "Long Coding", "Coding", "Basic Settings", "Output Tests", "Security Access", "Parametri live"]:
-            b = QPushButton(name)
+        for label, category in [
+            ("Proceduri", "Proceduri"), ("Adaptări", "Adaptation"), ("Calibrări", "Calibrări"),
+            ("Resetări", "Resetări"), ("Long Coding", "Long Coding"), ("Coding", "Coding"),
+            ("Basic Settings", "Basic Settings"), ("Output Tests", "Output Tests"),
+            ("Security Access", "Security Access"), ("Parametri live", "Parametri live")
+        ]:
+            b = QPushButton(label)
+            b.setProperty("target_category", category)
             b.setCheckable(True)
             b.setObjectName("categoryChip")
-            b.clicked.connect(lambda checked=False, n=name: self.set_workspace_category(n))
+            b.clicked.connect(lambda checked=False, n=category: self.set_workspace_category(n))
             chips.addWidget(b)
             self.category_buttons.append(b)
         chips.addStretch()
@@ -46,7 +52,7 @@ def apply(MainWindow):
         self.proc_category = QComboBox()
         self.proc_category.addItem("Toate")
         self.proc_search = QLineEdit()
-        self.proc_search.setPlaceholderText("Caută: G85, DPF, Byte, Bit, IDE, MAS, canal, service, EGR, DSG...")
+        self.proc_search.setPlaceholderText("Caută: baterie, G85, suspensie, clapetă, service, DPF, Byte, Bit, IDE, MAS...")
         self.proc_category.currentTextChanged.connect(self.load_procedures)
         self.proc_search.textChanged.connect(self.load_procedures)
         bar.addWidget(QLabel("Categorie:"))
@@ -83,19 +89,14 @@ def apply(MainWindow):
         if idx >= 0:
             self.proc_category.setCurrentIndex(idx)
         else:
-            # Alias categories can fall back to text search when a legacy DB uses a related name.
-            aliases = {
-                "Proceduri": "Diagnostic",
-                "Parametri live": "Live Data",
-                "Resetări": "Service",
-            }
+            aliases = {"Proceduri": "Diagnostic", "Parametri live": "Live Data", "Resetări": "Service"}
             target = aliases.get(name)
             if target:
                 idx = self.proc_category.findText(target)
                 if idx >= 0:
                     self.proc_category.setCurrentIndex(idx)
         for b in getattr(self, "category_buttons", []):
-            b.setChecked(b.text() == name)
+            b.setChecked(b.property("target_category") == name)
 
     def refresh_categories_expert(self):
         self.proc_category.blockSignals(True)
@@ -107,6 +108,26 @@ def apply(MainWindow):
         for x in preferred + rest:
             self.proc_category.addItem(x)
         self.proc_category.blockSignals(False)
+
+    def load_years_engines_expert(self):
+        self.year_combo.clear()
+        self.engine_combo.clear()
+        self.engine_combo.addItem("Nespecificat", None)
+        gid = self.gen_combo.currentData()
+        if not gid:
+            return
+        h = self.con.execute("SELECT year_from,year_to FROM generations WHERE id=?", (gid,)).fetchone()
+        if h:
+            for y in range(h["year_from"], h["year_to"] + 1):
+                self.year_combo.addItem(str(y), y)
+        rows = self.con.execute("""SELECT e.* FROM engines e JOIN vehicle_engines ve ON ve.engine_id=e.id
+                                  WHERE ve.generation_id=? ORDER BY COALESCE(NULLIF(e.powertrain_type,''),e.fuel), e.displacement, e.code""", (gid,)).fetchall()
+        for e in rows:
+            keys=set(e.keys())
+            kind=(e["powertrain_type"] if "powertrain_type" in keys and e["powertrain_type"] else e["fuel"] or "Motor")
+            disp=f'{e["displacement"]}L ' if e["displacement"] else ""
+            power=f'{e["power_hp"]}CP' if e["power_hp"] else ""
+            self.engine_combo.addItem(f'{kind} | {e["code"]} • {disp}{power}'.strip(), e["id"])
 
     def show_selected_dtc_expert(self):
         row = self.dtc_table.currentRow()
@@ -122,21 +143,13 @@ def apply(MainWindow):
         location = value("component_location", "Poziția exactă trebuie confirmată după cod motor / platformă")
         test_path = value("test_path", "Vezi procedura specifică din Workspace VCDS")
         params = value("vcds_parameters", "Parametrii exacți diferă după ECU; caută denumirile relevante în Advanced Measuring Values.")
-        expected = value("expected_values", "Nu există o valoare numerică universală; compară specified/actual în condițiile indicate de procedura motorului.")
-        replacement = value("replacement_steps", "Confirmă piesa defectă înainte de demontare; urmează manualul de reparație pentru codul motor și chassis.")
+        expected = value("expected_values", "Compară specified/actual și limitele controllerului; nu există o valoare universală pentru toate motoarele.")
+        replacement = value("replacement_steps", "Confirmă piesa defectă înainte de demontare și urmează manualul de reparație pentru codul motor/chassis.")
         text = (
-            f'DESCRIERE\n{r["description"]}\n\n'
-            f'SIMPTOME\n{r["symptoms"]}\n\n'
-            f'CAUZE POSIBILE\n{r["causes"]}\n\n'
-            f'PIESA / SISTEM SUSPECT\n{component}\n\n'
-            f'UNDE ESTE\n{location}\n\n'
-            f'PARAMETRI DE URMĂRIT ÎN VCDS\n{params}\n\n'
-            f'CE TREBUIE SĂ VEZI / VALORI\n{expected}\n\n'
-            f'CALE TEST VCDS\n{test_path}\n\n'
-            f'DIAGNOSTIC PAS CU PAS\n{r["diagnosis"]}\n\n'
-            f'CUM O REPARI\n{r["repair"]}\n\n'
-            f'CUM SCHIMBI PIESA / CE FACI DUPĂ\n{replacement}\n\n'
-            f'SEVERITATE\n{r["severity"]}\n\n'
+            f'DESCRIERE\n{r["description"]}\n\nSIMPTOME\n{r["symptoms"]}\n\nCAUZE POSIBILE\n{r["causes"]}\n\n'
+            f'PIESA / SISTEM SUSPECT\n{component}\n\nUNDE ESTE\n{location}\n\nPARAMETRI DE URMĂRIT ÎN VCDS\n{params}\n\n'
+            f'CE TREBUIE SĂ VEZI / VALORI\n{expected}\n\nCALE TEST VCDS\n{test_path}\n\nDIAGNOSTIC PAS CU PAS\n{r["diagnosis"]}\n\n'
+            f'CUM O REPARI\n{r["repair"]}\n\nCUM SCHIMBI PIESA / CE FACI DUPĂ\n{replacement}\n\nSEVERITATE\n{r["severity"]}\n\n'
             f'STATUS\n{"VERIFICAT" if r["verified"] else "DE VERIFICAT / starter"}'
         )
         self.dtc_text.setPlainText(text)
@@ -153,5 +166,6 @@ def apply(MainWindow):
     MainWindow.build_workspace_page = build_workspace_page_expert
     MainWindow.set_workspace_category = set_workspace_category
     MainWindow.refresh_categories = refresh_categories_expert
+    MainWindow.load_years_engines = load_years_engines_expert
     MainWindow.show_selected_dtc = show_selected_dtc_expert
     MainWindow.apply_style = apply_style_expert
