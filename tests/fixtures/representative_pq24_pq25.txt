@@ -1,0 +1,15 @@
+# REPRESENTATIVE / SYNTHETIC VCDS FIXTURE - PQ24/PQ25
+Address 01: Engine
+1 Fault Found:
+16555 - Fuel Trim; Bank 1
+            P0171 - 35-10 - System Too Lean - Intermittent
+Address 03: ABS Brakes
+1 Fault Found:
+00778 - Steering Angle Sensor (G85)
+            005 - No or Incorrect Basic Setting / Adaptation
+Address 09: Cent. Elect.
+No fault code found.
+Address 17: Instruments
+1 Fault Found:
+01176 - Key
+            008 - Implausible Signal - Intermittent
