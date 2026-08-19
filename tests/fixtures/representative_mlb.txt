@@ -1,0 +1,15 @@
+# REPRESENTATIVE / SYNTHETIC VCDS FIXTURE - MLB
+Address 01: Engine
+1 Fault Found:
+004120 - Intake Manifold Runner (Bank 2)
+            P1018 - 001 - Lower Limit Not Reached - Intermittent
+Address 05: Acc/Start Auth.
+1 Fault Found:
+00955 - Key 1
+            002 - Lower Limit Exceeded - Intermittent
+Address 19: CAN Gateway
+1 Fault Found:
+03041 - Energy Management Active
+            000 - Static
+Address 46: Central Conv.
+No fault code found.
