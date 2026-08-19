@@ -111,6 +111,25 @@ Fault Frequency: 1
         self.assertEqual(next(f for f in r.faults if f.code == 'P261A').frequency, '1')
         self.assertIn('Intermittent', next(f for f in r.faults if f.vag_code == '00955').status)
 
+    def test_representative_kline_pq34_fixture(self):
+        text = (FIXTURES / 'representative_kline_pq34.txt').read_text(encoding='utf-8')
+        r = parse_autoscan_text(text, 'representative_kline_pq34.txt')
+        self.assertEqual(r.declared_fault_count, 4)
+        self.assertEqual(r.parsed_fault_count, 4)
+        self.assertTrue(r.validation_ok, r.validation_message)
+        self.assertEqual({m.address for m in r.modules}, {'01', '03', '17', '46'})
+        self.assertEqual({f.vag_code for f in r.faults}, {'16683', '17964', '01176', '01331'})
+
+    def test_representative_mqb_uds_fixture(self):
+        text = (FIXTURES / 'representative_mqb_uds.txt').read_text(encoding='utf-8')
+        r = parse_autoscan_text(text, 'representative_mqb_uds.txt')
+        self.assertEqual(r.declared_fault_count, 4)
+        self.assertEqual(r.parsed_fault_count, 4)
+        self.assertTrue(r.validation_ok, r.validation_message)
+        codes = {(f.module_address, f.code or f.vag_code) for f in r.faults}
+        self.assertEqual(codes, {('01', 'U1123'), ('03', 'C102D'), ('03', 'C10E2'), ('19', 'U0100')})
+        self.assertIn('MIL ON', next(f for f in r.faults if f.code == 'C102D').status)
+
 
 if __name__ == '__main__':
     unittest.main()
