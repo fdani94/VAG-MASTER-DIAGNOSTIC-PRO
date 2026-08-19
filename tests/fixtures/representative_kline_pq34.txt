@@ -1,0 +1,23 @@
+VCDS Auto-Scan representative fixture - synthetic/anonymized
+
+Address 01: Engine
+Part No: 038 906 019
+Component: 1,9l R4 EDC
+2 Faults Found:
+16683 - Boost Pressure Regulation
+            P0299 - 35-10 - Control Range Not Reached - Intermittent
+17964 - Charge Pressure Control
+            P1556 - 35-10 - Negative Deviation - Intermittent
+
+Address 03: ABS Brakes
+No fault code found.
+
+Address 17: Instruments
+1 Fault Found:
+01176 - Key
+            07-10 - Signal too Low - Intermittent
+
+Address 46: Central Conv.
+1 Fault Found:
+01331 - Door Control Module; Driver Side (J386)
+            49-10 - No Communications - Intermittent
