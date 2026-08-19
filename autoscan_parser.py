@@ -7,7 +7,8 @@ MODULE_RE = re.compile(r"^(?:Address\s+)?(?P<address>[0-9A-F]{2})[:\-]\s*(?P<nam
 MODULE_ALT_RE = re.compile(r"^Address\s+(?P<address>[0-9A-F]{2})\s*:\s*(?P<name>.+)$", re.I)
 DTC_P_RE = re.compile(r"\b([PBCU][0-9A-F]{4})\b", re.I)
 DTC_VAG_RE = re.compile(r"^\s*(\d{5})\s*-\s*(.+)$")
-FAULT_COUNT_RE = re.compile(r"^\s*(\d+)\s+Faults?\s+Found", re.I)
+FAULT_COUNT_RE = re.compile(r"^\s*(\d+)\s+Faults?\s+Found\b", re.I | re.M)
+NO_FAULT_RE = re.compile(r"No\s+fault\s+code\s+found", re.I)
 VIN_RE = re.compile(r"\bVIN:\s*([A-HJ-NPR-Z0-9]{17})\b", re.I)
 MILEAGE_RE = re.compile(r"(?:Mileage|Kilometerstand|Kilometrage):\s*([^\r\n]+)", re.I)
 STATUS_WORDS = ("Intermittent", "Sporadic", "Static", "Confirmed", "Pending", "MIL ON", "No Signal", "Implausible", "Not Confirmed")
@@ -39,6 +40,7 @@ class ScanModule:
     component: str = ""
     coding: str = ""
     faults: list = field(default_factory=list)
+    declared_fault_count: int | None = None
 
 
 @dataclass
@@ -48,6 +50,11 @@ class ScanResult:
     modules: list = field(default_factory=list)
     faults: list = field(default_factory=list)
     raw_text: str = ""
+    declared_fault_count: int | None = None
+    parsed_fault_count: int = 0
+    validation_ok: bool | None = None
+    validation_message: str = ""
+    validation_details: list = field(default_factory=list)
 
 
 def read_scan_file(path):
@@ -68,7 +75,10 @@ def read_scan_file(path):
         reader = PdfReader(str(path))
         pages = []
         for page in reader.pages:
-            pages.append(page.extract_text() or "")
+            try:
+                pages.append(page.extract_text(extraction_mode="layout") or "")
+            except TypeError:
+                pages.append(page.extract_text() or "")
         text = "\n".join(pages)
         if not text.strip():
             raise ValueError("PDF-ul nu conține text extractibil. Exportă Auto-Scan-ul ca TXT din VCDS.")
@@ -109,10 +119,8 @@ def _fault_from_block(block, module_address, module_name):
         vag = m.group(1)
         title = m.group(2).strip()
     elif p:
-        # Prefer the first non-metadata line as title.
         title = lines[0].strip()
     else:
-        # UDS reports may put a code after "Fault Code:".
         mf = re.search(r"Fault Code:\s*([PBCU][0-9A-F]{4}|\d{5,6})", joined, re.I)
         if not mf:
             return None
@@ -122,7 +130,6 @@ def _fault_from_block(block, module_address, module_name):
             vag = mf.group(1)
         title = lines[0].strip()
     code = p.group(1).upper() if p else ""
-    # Trim common VCDS suffix from first-line title.
     if code and code in title.upper():
         title = re.sub(rf"\s*-?\s*{re.escape(code)}.*$", "", title, flags=re.I).strip(" -") or title
     freeze_lines = []
@@ -146,6 +153,57 @@ def _fault_from_block(block, module_address, module_name):
     )
 
 
+def _validate_result(result):
+    """Cross-check VCDS-declared per-module fault totals against parsed DTCs."""
+    details = []
+    declared_total = 0
+    modules_with_declaration = 0
+    for module in result.modules:
+        if module.declared_fault_count is None:
+            continue
+        modules_with_declaration += 1
+        declared_total += module.declared_fault_count
+        parsed = len(module.faults)
+        if parsed != module.declared_fault_count:
+            details.append(
+                f"{module.address} {module.name}: VCDS declară {module.declared_fault_count}, parserul a extras {parsed}."
+            )
+
+    result.parsed_fault_count = len(result.faults)
+    if modules_with_declaration:
+        result.declared_fault_count = declared_total
+        result.validation_ok = not details and declared_total == result.parsed_fault_count
+        if result.validation_ok:
+            result.validation_message = (
+                f"VALIDARE OK: VCDS declară {declared_total} erori, iar aplicația a extras {result.parsed_fault_count}."
+            )
+        else:
+            missing = max(0, declared_total - result.parsed_fault_count)
+            extra = max(0, result.parsed_fault_count - declared_total)
+            if missing:
+                result.validation_message = (
+                    f"ATENȚIE: {missing} erori declarate de VCDS nu au fost parsate. "
+                    f"Declarate: {declared_total} • Extrase: {result.parsed_fault_count}."
+                )
+            elif extra:
+                result.validation_message = (
+                    f"ATENȚIE: parserul a extras {extra} intrări în plus față de totalul declarat de VCDS. "
+                    f"Declarate: {declared_total} • Extrase: {result.parsed_fault_count}."
+                )
+            else:
+                result.validation_message = "ATENȚIE: există neconcordanțe pe module, chiar dacă totalul general coincide."
+    else:
+        # A Fault Codes screen may not contain per-module "X Faults Found" declarations.
+        result.declared_fault_count = None
+        result.validation_ok = None
+        result.validation_message = (
+            "VALIDARE LIMITATĂ: raportul nu conține totaluri VCDS «X Faults Found» pe module; "
+            f"au fost extrase {result.parsed_fault_count} erori."
+        )
+    result.validation_details = details
+    return result
+
+
 def parse_autoscan_text(text, source_path=""):
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     result = ScanResult(source_path=str(source_path), raw_text=text)
@@ -166,14 +224,18 @@ def parse_autoscan_text(text, source_path=""):
         current.part_no = _extract_field(body, "Part No SW") or _extract_field(body, "Part No")
         current.component = _extract_field(body, "Component")
         current.coding = _extract_field(body, "Coding")
-        # Fault blocks usually begin with 5-digit VAG number or a P/B/C/U code line.
+        cm = FAULT_COUNT_RE.search(body)
+        if cm:
+            current.declared_fault_count = int(cm.group(1))
+        elif NO_FAULT_RE.search(body):
+            current.declared_fault_count = 0
+
         starts = []
         for i, line in enumerate(current_lines):
             if DTC_VAG_RE.match(line) or DTC_P_RE.search(line) or re.search(r"Fault Code:\s*([PBCU][0-9A-F]{4}|\d{5,6})", line, re.I):
                 if any(x in line for x in ("Part No", "Coding", "Shop #")):
                     continue
                 starts.append(i)
-        # Remove nested duplicate starts: keep a new block only after some separation.
         dedup = []
         for pos in starts:
             if not dedup or pos - dedup[-1] > 1:
@@ -197,12 +259,10 @@ def parse_autoscan_text(text, source_path=""):
             current = ScanModule(m.group("address").upper(), _clean_module_name(m.group("name")))
             current_lines = [line]
         elif current:
-            # VCDS summary starts after full controller details; stop at Scan/End lines only if next module not found.
             current_lines.append(line)
     finish_module()
     result.modules = modules
 
-    # Fallback for a Fault Codes screen / PDF that has no Address headers.
     if not result.faults:
         chunks = re.split(r"\n\s*\n", text)
         for chunk in chunks:
@@ -210,7 +270,7 @@ def parse_autoscan_text(text, source_path=""):
                 f = _fault_from_block(chunk, "", "Necunoscut")
                 if f and f.key not in {x.key for x in result.faults}:
                     result.faults.append(f)
-    return result
+    return _validate_result(result)
 
 
 def parse_autoscan_file(path):
@@ -238,7 +298,6 @@ def lookup_dtc(con, fault):
         row = con.execute("SELECT * FROM dtcs WHERE UPPER(code)=?", (code.upper(),)).fetchone()
         if row:
             return row
-    # Search aliases inside title/description, useful for 16683/P0299/000665 style entries.
     for code in candidates:
         row = con.execute("SELECT * FROM dtcs WHERE UPPER(title) LIKE ? OR UPPER(description) LIKE ? LIMIT 1", (f"%{code}%", f"%{code}%")).fetchone()
         if row:
@@ -279,7 +338,7 @@ def diagnostic_plan(con, fault, generation_id=None, engine_id=None):
     else:
         base.update({
             "title": fault.title or "DTC neindexat încă",
-            "description": "Codul a fost extras corect din Auto-Scan, dar nu are încă o fișă completă în baza locală.",
+            "description": "Codul a fost extras din Auto-Scan, dar nu are încă o fișă completă în baza locală.",
             "symptoms": "Folosește simptomele mașinii și statusul/Freeze Frame din raport.",
             "causes": "Nu schimba o piesă doar pe baza codului. Verifică alimentare, masă, siguranțe, cablaj, conectori și valorile live ale sistemului înainte de înlocuire.",
             "component": "De stabilit după textul exact al DTC-ului, modul și codul motor.",
