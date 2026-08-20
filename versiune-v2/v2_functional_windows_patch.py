@@ -1,6 +1,6 @@
 """Functional wiring for the separate KID Diagnostic V2 workspace windows.
 
-Applied after the responsive/windows patch.  The visual workspace windows keep
+Applied after the responsive/windows patch. The visual workspace windows keep
 using the real MainWindowV2 diagnostic engine, but all modal dialogs are
 parented to the active workspace and every data page refreshes visibly when it
 opens.
@@ -19,7 +19,7 @@ from autoscan_parser import parse_autoscan_file, diagnostic_plan
 from autoscan_correlation import correlate, render_correlation
 from autoscan_ro import ro_status, ro_module, ro_title, ro_confidence, ro_vcds_note
 
-FUNCTIONAL_WIRING_VERSION = "2.1-final-validation"
+FUNCTIONAL_WIRING_VERSION = "2.2-module-fallback"
 
 
 def _active_parent(owner):
@@ -74,8 +74,27 @@ def apply():
 
     def _load_modules(self):
         base_load_modules(self)
-        if self.module_table.rowCount() == 0:
-            self.module_table.setToolTip("Nu există module mapate explicit pentru generația selectată. Confirmă modulele instalate din Auto-Scan VCDS.")
+        if self.module_table.rowCount() > 0:
+            self.module_table.setToolTip(
+                "Module mapate pentru generația selectată. Confirmă echiparea reală prin Auto-Scan VCDS."
+            )
+            return
+
+        # Unele generații din baza extinsă nu au încă legături explicite în
+        # generation_modules. O fereastră goală pare nefuncțională și nu ajută
+        # în atelier, așa că afișăm catalogul general de controlere VAG ca
+        # fallback, fără să pretindem că toate sunt instalate pe mașina aleasă.
+        rows = self.con.execute(
+            "SELECT address,name,family,protocol FROM modules ORDER BY address,name LIMIT 500"
+        ).fetchall()
+        self.module_table.setRowCount(len(rows))
+        for i, row in enumerate(rows):
+            for j, key in enumerate(("address", "name", "family", "protocol")):
+                self.module_table.setItem(i, j, ui_v2.QTableWidgetItem(str(row[key] or "—")))
+        self.module_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.module_table.setToolTip(
+            "Catalog general de module VAG — prezența pe vehicul se confirmă prin Auto-Scan VCDS."
+        )
 
     def _load_procedures(self, page):
         base_load_procedures(self, page)
