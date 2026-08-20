@@ -88,9 +88,6 @@ def prepare_database():
         install_autoscan_audi_b8_common(con)
         install_coverage_gap_filler(con)
 
-        # V2: 40,000 numeric VAG slots + numeric P/B/C/U OBD slots.
-        # Detailed/verified rows installed above always win; index-only rows
-        # never overwrite workshop data and remain clearly marked in the UI.
         install_v2_dtc_reference_index(con)
         install_v2_obd_reference_index(con)
     finally:
@@ -109,5 +106,7 @@ if __name__ == "__main__":
     apply_v2_visual_fix()
     from v2_redesign_patch import apply as apply_v2_redesign_patch
     apply_v2_redesign_patch()
+    from v2_responsive_windows_patch import apply as apply_v2_responsive_windows_patch
+    apply_v2_responsive_windows_patch()
     from ui_v2 import run
     run()
