@@ -107,5 +107,7 @@ if __name__ == "__main__":
     apply_v2_master_ui_patch()
     from v2_visual_fix import apply as apply_v2_visual_fix
     apply_v2_visual_fix()
+    from v2_redesign_patch import apply as apply_v2_redesign_patch
+    apply_v2_redesign_patch()
     from ui_v2 import run
     run()
