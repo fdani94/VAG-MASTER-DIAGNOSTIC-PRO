@@ -22,8 +22,6 @@ pyinstaller --noconfirm --clean --windowed --onedir ^
   --name KID-VAG-MASTER-V2 ^
   --icon assets\kid_vag_v2.ico ^
   --add-data "assets;assets" ^
-  --collect-all PySide6 ^
-  --collect-all reportlab ^
   main.py
 if errorlevel 1 goto :error
 
