@@ -5,10 +5,12 @@ Versiunea 2 păstrează motorul de diagnostic și baza locală extinsă din apli
 ## Interfață V2
 
 - dashboard modern, aerisit, în limba română;
+- temă light modernă, alb / gri-albăstrui, cu accente blue;
 - carduri mari ilustrate pentru funcțiile principale;
 - selectarea vehiculului înainte de intrarea în workspace;
-- pagini separate pentru Auto-Scan, DTC, Codări, Adaptări, Service & Resetări, Date Live, Module & Ghiduri și Rapoarte;
-- logo KID Diagnostic și aspect unitar dark / automotive;
+- ferestre separate pentru Auto-Scan, DTC, Codări, Adaptări, Service & Resetări, Date Live, Module & Ghiduri și Rapoarte;
+- layout responsive pentru rezoluții desktop mici și mari;
+- logo KID Diagnostic și raport PDF cu antet compact;
 - fără mod demo.
 
 ## Funcții conectate
@@ -20,6 +22,10 @@ Versiunea 2 păstrează motorul de diagnostic și baza locală extinsă din apli
 - codări, adaptări și proceduri de service filtrate pe vehicul;
 - module și trasee VCDS;
 - raport PDF KID Diagnostic pe baza Auto-Scan-ului analizat.
+
+## Validare finală
+
+Build-ul final trebuie să treacă testele funcționale Windows pentru toate cele 8 ferestre, Auto-Scan cu DTC de probă, plan diagnostic, DTC, codări/adaptări/service, Live Data, module, generare PDF și pornirea executabilului PyInstaller.
 
 ## Pornire locală
 
