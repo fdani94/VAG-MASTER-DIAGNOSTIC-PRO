@@ -42,6 +42,7 @@ from autoscan_bcu_dtc_pack import install as install_autoscan_bcu_dtc
 from autoscan_can_gateway_master import install as install_autoscan_can_gateway_master
 from autoscan_audi_b8_common_pack import install as install_autoscan_audi_b8_common
 from dtc_reference_index_pack import install as install_v2_dtc_reference_index
+from obd_reference_index_pack import install as install_v2_obd_reference_index
 
 if not hasattr(appdb, "src_diag"):
     appdb.src_diag = None
@@ -87,9 +88,11 @@ def prepare_database():
         install_autoscan_audi_b8_common(con)
         install_coverage_gap_filler(con)
 
-        # V2: 40,000 local numeric VAG DTC slots. Detailed rows installed
-        # above always win; index-only rows never overwrite verified data.
+        # V2: 40,000 numeric VAG slots + numeric P/B/C/U OBD slots.
+        # Detailed/verified rows installed above always win; index-only rows
+        # never overwrite workshop data and remain clearly marked in the UI.
         install_v2_dtc_reference_index(con)
+        install_v2_obd_reference_index(con)
     finally:
         con.close()
 
