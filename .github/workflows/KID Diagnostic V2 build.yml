@@ -1,0 +1,79 @@
+name: Build KID Diagnostic V2 Windows EXE
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/v2-modern-dashboard
+    paths:
+      - "versiune-v2/**"
+      - "*.py"
+      - "requirements.txt"
+      - ".github/workflows/KID Diagnostic V2 build.yml"
+
+jobs:
+  build-v2:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller==6.21.0 pillow
+
+      - name: Create KID Diagnostic icon
+        shell: powershell
+        run: |
+          @'
+          from PIL import Image, ImageDraw, ImageFont
+          S=512
+          im=Image.new('RGBA',(S,S),(4,16,31,255))
+          d=ImageDraw.Draw(im)
+          d.ellipse((18,18,S-18,S-18), fill=(5,25,48,255), outline=(170,190,210,255), width=18)
+          d.ellipse((36,36,S-36,S-36), outline=(0,155,255,255), width=14)
+          d.rounded_rectangle((105,150,407,255), radius=45, outline=(45,180,255,255), width=12)
+          d.line((150,150,205,105,310,105,362,150), fill=(205,225,240,255), width=12)
+          d.ellipse((125,225,185,285), fill=(2,12,25,255), outline=(0,160,255,255), width=8)
+          d.ellipse((327,225,387,285), fill=(2,12,25,255), outline=(0,160,255,255), width=8)
+          try:
+              f1=ImageFont.truetype('C:/Windows/Fonts/arialbd.ttf',105)
+              f2=ImageFont.truetype('C:/Windows/Fonts/arialbd.ttf',42)
+          except:
+              f1=f2=None
+          box=d.textbbox((0,0),'KID',font=f1)
+          d.text(((S-(box[2]-box[0]))//2,278),'KID',font=f1,fill=(235,242,250,255),stroke_width=3,stroke_fill=(0,110,230,255))
+          box=d.textbbox((0,0),'DIAGNOSTIC',font=f2)
+          d.text(((S-(box[2]-box[0]))//2,385),'DIAGNOSTIC',font=f2,fill=(70,185,255,255))
+          im.save('kid_diagnostic_v2.ico', sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])
+          '@ | Set-Content make_v2_icon.py
+          python make_v2_icon.py
+
+      - name: Validate V2 source
+        run: |
+          python -m py_compile versiune-v2/main_v2.py versiune-v2/ui_v2.py autoscan_parser.py ui_autoscan_pdf_export.py
+
+      - name: Build V2 executable
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed --name KID-Diagnostic-V2 --icon kid_diagnostic_v2.ico --paths . --paths versiune-v2 --hidden-import ui_v2 --collect-all pypdf versiune-v2/main_v2.py
+
+      - name: Verify executable
+        shell: powershell
+        run: |
+          if (-not (Test-Path "dist\KID-Diagnostic-V2.exe")) { exit 1 }
+          Get-Item "dist\KID-Diagnostic-V2.exe"
+
+      - name: Upload V2 Windows EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: KID-Diagnostic-V2-Windows
+          path: dist/KID-Diagnostic-V2.exe
+          if-no-files-found: error
