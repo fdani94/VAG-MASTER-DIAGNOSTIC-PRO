@@ -47,23 +47,22 @@ jobs:
           @'
           from PIL import Image, ImageDraw, ImageFont
           S=512
-          im=Image.new('RGBA',(S,S),(4,16,31,255))
+          im=Image.new('RGBA',(S,S),(235,244,250,255))
           d=ImageDraw.Draw(im)
-          d.ellipse((18,18,S-18,S-18), fill=(5,25,48,255), outline=(170,190,210,255), width=18)
-          d.ellipse((36,36,S-36,S-36), outline=(0,155,255,255), width=14)
-          d.rounded_rectangle((105,150,407,255), radius=45, outline=(45,180,255,255), width=12)
-          d.line((150,150,205,105,310,105,362,150), fill=(205,225,240,255), width=12)
-          d.ellipse((125,225,185,285), fill=(2,12,25,255), outline=(0,160,255,255), width=8)
-          d.ellipse((327,225,387,285), fill=(2,12,25,255), outline=(0,160,255,255), width=8)
+          d.rounded_rectangle((18,18,S-18,S-18), radius=105, fill=(255,255,255,255), outline=(66,151,217,255), width=18)
+          d.rounded_rectangle((105,150,407,255), radius=45, outline=(45,148,220,255), width=12)
+          d.line((150,150,205,105,310,105,362,150), fill=(71,116,150,255), width=12)
+          d.ellipse((125,225,185,285), fill=(242,248,252,255), outline=(40,142,215,255), width=8)
+          d.ellipse((327,225,387,285), fill=(242,248,252,255), outline=(40,142,215,255), width=8)
           try:
               f1=ImageFont.truetype('C:/Windows/Fonts/arialbd.ttf',105)
               f2=ImageFont.truetype('C:/Windows/Fonts/arialbd.ttf',42)
           except:
               f1=f2=None
           box=d.textbbox((0,0),'KID',font=f1)
-          d.text(((S-(box[2]-box[0]))//2,278),'KID',font=f1,fill=(235,242,250,255),stroke_width=3,stroke_fill=(0,110,230,255))
+          d.text(((S-(box[2]-box[0]))//2,278),'KID',font=f1,fill=(28,63,91,255),stroke_width=2,stroke_fill=(94,171,224,255))
           box=d.textbbox((0,0),'DIAGNOSTIC',font=f2)
-          d.text(((S-(box[2]-box[0]))//2,385),'DIAGNOSTIC',font=f2,fill=(70,185,255,255))
+          d.text(((S-(box[2]-box[0]))//2,385),'DIAGNOSTIC',font=f2,fill=(42,137,203,255))
           im.save('kid_diagnostic_v2.ico', sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])
           '@ | Set-Content make_v2_icon.py
           python make_v2_icon.py
@@ -72,9 +71,9 @@ jobs:
         id: validate
         continue-on-error: true
         run: |
-          python -m py_compile versiune-v2/main_v2.py versiune-v2/ui_v2.py versiune-v2/dtc_reference_index_pack.py versiune-v2/obd_reference_index_pack.py versiune-v2/v2_diagnostic_patch.py versiune-v2/v2_ui_runtime_patch.py versiune-v2/v2_master_ui_patch.py versiune-v2/v2_visual_fix.py versiune-v2/v2_redesign_patch.py autoscan_parser.py ui_autoscan_pdf_export.py
+          python -m py_compile versiune-v2/main_v2.py versiune-v2/ui_v2.py versiune-v2/dtc_reference_index_pack.py versiune-v2/obd_reference_index_pack.py versiune-v2/v2_diagnostic_patch.py versiune-v2/v2_ui_runtime_patch.py versiune-v2/v2_master_ui_patch.py versiune-v2/v2_visual_fix.py versiune-v2/v2_redesign_patch.py versiune-v2/v2_responsive_windows_patch.py autoscan_parser.py ui_autoscan_pdf_export.py
 
-      - name: Smoke test redesigned V2 UI and PDF header
+      - name: Validate responsive UI windows buttons and PDF header
         id: smoke
         continue-on-error: true
         shell: powershell
@@ -85,48 +84,123 @@ jobs:
           import sys
           from pathlib import Path
           from types import SimpleNamespace
+
           root = Path.cwd(); v2 = root / 'versiune-v2'
           sys.path.insert(0, str(root)); sys.path.insert(0, str(v2))
           import main_v2
           main_v2.prepare_database()
+
           from v2_diagnostic_patch import apply as p1
           from v2_ui_runtime_patch import apply as p2
           from v2_master_ui_patch import apply as p3
           from v2_visual_fix import apply as p4
           from v2_redesign_patch import apply as p5
-          p1(); p2(); p3(); p4(); p5()
-          from PySide6.QtWidgets import QApplication
+          from v2_responsive_windows_patch import apply as p6
+          p1(); p2(); p3(); p4(); p5(); p6()
+
+          from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox, QPushButton
           from PySide6.QtGui import QFont
+          import ui_v2
           from ui_v2 import MainWindowV2
           from ui_autoscan_pdf_export import _build_html
+
           app = QApplication([]); app.setFont(QFont('Arial', 10))
-          win = MainWindowV2(); win.resize(1540, 920); win.show(); app.processEvents()
-          assert win.stack.count() == 9
-          assert win.width() >= 1180
-          shot = win.grab(); assert shot.save('v2_ui_preview.png', 'PNG')
+          QFileDialog.getOpenFileName = staticmethod(lambda *a, **k: ('', ''))
+          QFileDialog.getSaveFileName = staticmethod(lambda *a, **k: ('', ''))
+          QMessageBox.warning = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Ok)
+          QMessageBox.information = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Ok)
+          QMessageBox.critical = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Ok)
+
+          win = MainWindowV2(); win.show(); app.processEvents()
+          assert win.stack.count() == 1, f'dashboard stack must contain only dashboard, got {win.stack.count()}'
+          assert len(win._workspace_pages) == 8
+          assert win.minimumWidth() <= 800 and win.minimumHeight() <= 600
+
+          # Exercise responsive card/stat reflow at common desktop resolutions.
+          sizes = [(800,600,2,2),(1024,700,2,2),(1366,768,3,4),(1600,900,4,4)]
+          for width,height,card_cols,stat_cols in sizes:
+              win.resize(width,height); win.show(); app.processEvents()
+              win._responsive_dashboard.reflow(width - 44); app.processEvents()
+              assert int(win._responsive_dashboard.property('responsiveColumns')) == card_cols
+              assert int(win._responsive_dashboard.property('responsiveStatColumns')) == stat_cols
+              shot = win.grab(); assert shot.width() > 0 and shot.height() > 0
+              assert shot.save(f'v2_ui_{width}x{height}.png','PNG')
+
+          # Select the first real vehicle path available in the database.
+          chosen = False
+          for bi in range(1, win.brand_combo.count()):
+              win.brand_combo.setCurrentIndex(bi); app.processEvents()
+              for mi in range(1, win.model_combo.count()):
+                  win.model_combo.setCurrentIndex(mi); app.processEvents()
+                  if win.gen_combo.count() > 1:
+                      win.gen_combo.setCurrentIndex(1); app.processEvents(); chosen = True; break
+              if chosen: break
+          assert chosen, 'No selectable vehicle path in V2 database'
+          confirm = next(b for b in win.findChildren(QPushButton) if b.text() == 'CONFIRMĂ VEHICULUL')
+          confirm.click(); app.processEvents()
+          assert win.selected_generation_id is not None
+
+          # Click every dashboard card button and verify that a distinct top-level
+          # workspace opens. Then use that workspace's Back button to return.
+          cards = win.findChildren(ui_v2.FeatureCard)
+          assert len(cards) == 8, f'expected 8 dashboard cards, found {len(cards)}'
+          opened = set()
+          for card in cards:
+              btn = next(b for b in card.findChildren(QPushButton) if b.objectName() == 'cardButton')
+              btn.click(); app.processEvents()
+              visible = [i for i,w in win._workspace_windows.items() if w.isVisible()]
+              assert len(visible) == 1, f'card did not open exactly one workspace: {visible}'
+              idx = visible[0]; opened.add(idx)
+              workspace = win._workspace_windows[idx]
+              assert workspace.centralWidget() is win._workspace_pages[idx]
+              assert workspace.minimumWidth() <= 800 and workspace.minimumHeight() <= 600
+              back = next((b for b in workspace.findChildren(QPushButton) if b.objectName() == 'backButton'), None)
+              assert back is not None
+              back.click(); app.processEvents()
+              assert win.isVisible()
+          assert opened == set(range(1,9)), f'not all workspaces opened: {opened}'
+
+          # Exercise the actionable controls without displaying native dialogs.
+          win.open_page(1); app.processEvents()
+          auto_page = win._workspace_pages[1]
+          auto_buttons = [b for b in auto_page.findChildren(QPushButton) if b.objectName() != 'backButton']
+          assert len(auto_buttons) >= 3
+          for b in auto_buttons: b.click(); app.processEvents()
+          win.show_dashboard(); app.processEvents()
+
+          win.dtc_search.setText('P0299'); app.processEvents(); assert win.dtc_table.rowCount() >= 0
+          win.live_search.setText('EGR'); app.processEvents(); assert win.live_table.rowCount() >= 0
+          for idx in (3,4,5):
+              page = win._workspace_pages[idx]
+              page.search.setText('service'); app.processEvents(); assert page.table.rowCount() >= 0
+          win.open_page(7); app.processEvents(); assert win.module_table.rowCount() >= 0; win.show_dashboard(); app.processEvents()
+
+          # PDF header must keep the custom logo compact.
           win.current_autoscan = SimpleNamespace(vin='TESTVIN', source_path='test_autoscan.txt', modules=[])
           win.autoscan_plans = []; win.autoscan_correlation = None
           html = _build_html(win)
           assert "width='112' height='32'" in html
           assert "logoCell" in html
-          print('V2 UI/PDF smoke test OK:', win.windowTitle(), 'pages=', win.stack.count(), 'preview=', shot.size())
+
+          print('RESPONSIVE/BUTTON TEST OK', 'workspaces=', sorted(opened), 'main_min=', win.minimumSize())
+          for w in list(win._workspace_windows.values()): w.hide()
           win.close(); app.quit()
           '@ | Set-Content smoke_v2_ui.py
           python smoke_v2_ui.py
 
-      - name: Upload V2 UI preview
+      - name: Upload responsive UI previews
         if: steps.smoke.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: KID-Diagnostic-V2-UI-Preview
-          path: v2_ui_preview.png
+          name: KID-Diagnostic-V2-UI-Responsive-Previews
+          path: v2_ui_*.png
           if-no-files-found: error
 
       - name: Build V2 executable
         id: build
         continue-on-error: true
         run: |
-          pyinstaller --noconfirm --clean --onefile --windowed --name KID-Diagnostic-V2 --icon kid_diagnostic_v2.ico --paths . --paths versiune-v2 --hidden-import ui_v2 --hidden-import dtc_reference_index_pack --hidden-import obd_reference_index_pack --hidden-import v2_diagnostic_patch --hidden-import v2_ui_runtime_patch --hidden-import v2_master_ui_patch --hidden-import v2_visual_fix --hidden-import v2_redesign_patch --collect-all pypdf versiune-v2/main_v2.py
+          pyinstaller --noconfirm --clean --onefile --windowed --name KID-Diagnostic-V2 --icon kid_diagnostic_v2.ico --paths . --paths versiune-v2 --hidden-import ui_v2 --hidden-import dtc_reference_index_pack --hidden-import obd_reference_index_pack --hidden-import v2_diagnostic_patch --hidden-import v2_ui_runtime_patch --hidden-import v2_master_ui_patch --hidden-import v2_visual_fix --hidden-import v2_redesign_patch --hidden-import v2_responsive_windows_patch --collect-all pypdf versiune-v2/main_v2.py
 
       - name: Verify executable
         id: verify
@@ -170,7 +244,7 @@ jobs:
           exe=Path('dist/KID-Diagnostic-V2.exe'); size=exe.stat().st_size if exe.exists() else 0
           repo=os.environ.get('REPOSITORY','fdani94/VAG-MASTER-DIAGNOSTIC-PRO'); run_id=os.environ.get('RUN_ID','')
           run_url=f'https://github.com/{repo}/actions/runs/{run_id}' if run_id else ''
-          text=f'''# KID Diagnostic V2 — Build Status\n\n**Status:** {status}\n\n- Source commit: `{os.environ.get("SOURCE_SHA","")}`\n- Validate source: **{validate}**\n- UI/PDF smoke test: **{smoke}**\n- PyInstaller build: **{build}**\n- Verify EXE: **{verify}**\n- Executable: `KID-Diagnostic-V2.exe`\n- EXE size: **{size} bytes**\n- Artifact: `KID-Diagnostic-V2-Windows` (when status is SUCCESS)\n- Workflow run: {run_url}\n- Run attempt: {os.environ.get("RUN_ATTEMPT","")}\n- Updated UTC: {datetime.now(timezone.utc).isoformat(timespec="seconds")}\n'''
+          text=f'''# KID Diagnostic V2 — Build Status\n\n**Status:** {status}\n\n- Source commit: `{os.environ.get("SOURCE_SHA","")}`\n- Validate source: **{validate}**\n- Responsive UI / buttons / PDF test: **{smoke}**\n- PyInstaller build: **{build}**\n- Verify EXE: **{verify}**\n- Executable: `KID-Diagnostic-V2.exe`\n- EXE size: **{size} bytes**\n- Artifact: `KID-Diagnostic-V2-Windows` (when status is SUCCESS)\n- Workflow run: {run_url}\n- Run attempt: {os.environ.get("RUN_ATTEMPT","")}\n- Updated UTC: {datetime.now(timezone.utc).isoformat(timespec="seconds")}\n'''
           Path('versiune-v2/BUILD_STATUS.md').write_text(text,encoding='utf-8')
           '@ | Set-Content write_build_status.py
           python write_build_status.py
