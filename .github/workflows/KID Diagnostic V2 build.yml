@@ -10,6 +10,14 @@ on:
       - "*.py"
       - "requirements.txt"
       - ".github/workflows/KID Diagnostic V2 build.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "versiune-v2/**"
+      - "*.py"
+      - "requirements.txt"
+      - ".github/workflows/KID Diagnostic V2 build.yml"
 
 permissions:
   contents: write
@@ -92,7 +100,7 @@ jobs:
           if-no-files-found: error
 
       - name: Publish build result into repository
-        if: always()
+        if: always() && github.event_name == 'push'
         shell: powershell
         env:
           VALIDATE_RESULT: ${{ steps.validate.outcome }}
