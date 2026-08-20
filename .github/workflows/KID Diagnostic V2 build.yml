@@ -74,7 +74,7 @@ jobs:
         run: |
           python -m py_compile versiune-v2/main_v2.py versiune-v2/ui_v2.py versiune-v2/dtc_reference_index_pack.py versiune-v2/obd_reference_index_pack.py versiune-v2/v2_diagnostic_patch.py versiune-v2/v2_ui_runtime_patch.py versiune-v2/v2_master_ui_patch.py versiune-v2/v2_visual_fix.py versiune-v2/v2_redesign_patch.py autoscan_parser.py ui_autoscan_pdf_export.py
 
-      - name: Smoke test redesigned V2 UI
+      - name: Smoke test redesigned V2 UI and PDF header
         id: smoke
         continue-on-error: true
         shell: powershell
@@ -84,6 +84,7 @@ jobs:
           @'
           import sys
           from pathlib import Path
+          from types import SimpleNamespace
           root = Path.cwd(); v2 = root / 'versiune-v2'
           sys.path.insert(0, str(root)); sys.path.insert(0, str(v2))
           import main_v2
@@ -95,13 +96,20 @@ jobs:
           from v2_redesign_patch import apply as p5
           p1(); p2(); p3(); p4(); p5()
           from PySide6.QtWidgets import QApplication
+          from PySide6.QtGui import QFont
           from ui_v2 import MainWindowV2
-          app = QApplication([])
+          from ui_autoscan_pdf_export import _build_html
+          app = QApplication([]); app.setFont(QFont('Arial', 10))
           win = MainWindowV2(); win.resize(1540, 920); win.show(); app.processEvents()
           assert win.stack.count() == 9
           assert win.width() >= 1180
           shot = win.grab(); assert shot.save('v2_ui_preview.png', 'PNG')
-          print('V2 UI smoke test OK:', win.windowTitle(), 'pages=', win.stack.count(), 'preview=', shot.size())
+          win.current_autoscan = SimpleNamespace(vin='TESTVIN', source_path='test_autoscan.txt', modules=[])
+          win.autoscan_plans = []; win.autoscan_correlation = None
+          html = _build_html(win)
+          assert "width='112' height='32'" in html
+          assert "logoCell" in html
+          print('V2 UI/PDF smoke test OK:', win.windowTitle(), 'pages=', win.stack.count(), 'preview=', shot.size())
           win.close(); app.quit()
           '@ | Set-Content smoke_v2_ui.py
           python smoke_v2_ui.py
@@ -162,7 +170,7 @@ jobs:
           exe=Path('dist/KID-Diagnostic-V2.exe'); size=exe.stat().st_size if exe.exists() else 0
           repo=os.environ.get('REPOSITORY','fdani94/VAG-MASTER-DIAGNOSTIC-PRO'); run_id=os.environ.get('RUN_ID','')
           run_url=f'https://github.com/{repo}/actions/runs/{run_id}' if run_id else ''
-          text=f'''# KID Diagnostic V2 — Build Status\n\n**Status:** {status}\n\n- Source commit: `{os.environ.get("SOURCE_SHA","")}`\n- Validate source: **{validate}**\n- UI smoke test: **{smoke}**\n- PyInstaller build: **{build}**\n- Verify EXE: **{verify}**\n- Executable: `KID-Diagnostic-V2.exe`\n- EXE size: **{size} bytes**\n- Artifact: `KID-Diagnostic-V2-Windows` (when status is SUCCESS)\n- Workflow run: {run_url}\n- Run attempt: {os.environ.get("RUN_ATTEMPT","")}\n- Updated UTC: {datetime.now(timezone.utc).isoformat(timespec="seconds")}\n'''
+          text=f'''# KID Diagnostic V2 — Build Status\n\n**Status:** {status}\n\n- Source commit: `{os.environ.get("SOURCE_SHA","")}`\n- Validate source: **{validate}**\n- UI/PDF smoke test: **{smoke}**\n- PyInstaller build: **{build}**\n- Verify EXE: **{verify}**\n- Executable: `KID-Diagnostic-V2.exe`\n- EXE size: **{size} bytes**\n- Artifact: `KID-Diagnostic-V2-Windows` (when status is SUCCESS)\n- Workflow run: {run_url}\n- Run attempt: {os.environ.get("RUN_ATTEMPT","")}\n- Updated UTC: {datetime.now(timezone.utc).isoformat(timespec="seconds")}\n'''
           Path('versiune-v2/BUILD_STATUS.md').write_text(text,encoding='utf-8')
           '@ | Set-Content write_build_status.py
           python write_build_status.py
