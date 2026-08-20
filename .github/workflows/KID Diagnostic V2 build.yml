@@ -11,6 +11,9 @@ on:
       - "requirements.txt"
       - ".github/workflows/KID Diagnostic V2 build.yml"
 
+permissions:
+  contents: write
+
 jobs:
   build-v2:
     runs-on: windows-latest
@@ -58,22 +61,94 @@ jobs:
           python make_v2_icon.py
 
       - name: Validate V2 source
+        id: validate
+        continue-on-error: true
         run: |
           python -m py_compile versiune-v2/main_v2.py versiune-v2/ui_v2.py versiune-v2/dtc_reference_index_pack.py versiune-v2/obd_reference_index_pack.py versiune-v2/v2_diagnostic_patch.py versiune-v2/v2_ui_runtime_patch.py versiune-v2/v2_master_ui_patch.py versiune-v2/v2_visual_fix.py autoscan_parser.py ui_autoscan_pdf_export.py
 
       - name: Build V2 executable
+        id: build
+        continue-on-error: true
         run: |
           pyinstaller --noconfirm --clean --onefile --windowed --name KID-Diagnostic-V2 --icon kid_diagnostic_v2.ico --paths . --paths versiune-v2 --hidden-import ui_v2 --hidden-import dtc_reference_index_pack --hidden-import obd_reference_index_pack --hidden-import v2_diagnostic_patch --hidden-import v2_ui_runtime_patch --hidden-import v2_master_ui_patch --hidden-import v2_visual_fix --collect-all pypdf versiune-v2/main_v2.py
 
       - name: Verify executable
+        id: verify
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
         shell: powershell
         run: |
           if (-not (Test-Path "dist\KID-Diagnostic-V2.exe")) { exit 1 }
-          Get-Item "dist\KID-Diagnostic-V2.exe"
+          $file = Get-Item "dist\KID-Diagnostic-V2.exe"
+          Write-Host "EXE: $($file.FullName)"
+          Write-Host "SIZE: $($file.Length) bytes"
 
       - name: Upload V2 Windows EXE
+        if: steps.verify.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: KID-Diagnostic-V2-Windows
           path: dist/KID-Diagnostic-V2.exe
           if-no-files-found: error
+
+      - name: Publish build result into repository
+        if: always()
+        shell: powershell
+        env:
+          VALIDATE_RESULT: ${{ steps.validate.outcome }}
+          BUILD_RESULT: ${{ steps.build.outcome }}
+          VERIFY_RESULT: ${{ steps.verify.outcome }}
+          SOURCE_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          @'
+          import os
+          from pathlib import Path
+          from datetime import datetime, timezone
+
+          validate = os.environ.get("VALIDATE_RESULT", "unknown")
+          build = os.environ.get("BUILD_RESULT", "unknown")
+          verify = os.environ.get("VERIFY_RESULT", "unknown")
+          ok = validate == build == verify == "success"
+          status = "SUCCESS" if ok else "FAILED"
+          exe = Path("dist/KID-Diagnostic-V2.exe")
+          size = exe.stat().st_size if exe.exists() else 0
+          repo = os.environ.get("REPOSITORY", "fdani94/VAG-MASTER-DIAGNOSTIC-PRO")
+          run_id = os.environ.get("RUN_ID", "")
+          run_url = f"https://github.com/{repo}/actions/runs/{run_id}" if run_id else ""
+          text = f'''# KID Diagnostic V2 — Build Status
+
+          **Status:** {status}
+
+          - Source commit: `{os.environ.get("SOURCE_SHA", "")}`
+          - Validate source: **{validate}**
+          - PyInstaller build: **{build}**
+          - Verify EXE: **{verify}**
+          - Executable: `KID-Diagnostic-V2.exe`
+          - EXE size: **{size} bytes**
+          - Artifact: `KID-Diagnostic-V2-Windows` (when status is SUCCESS)
+          - Workflow run: {run_url}
+          - Run attempt: {os.environ.get("RUN_ATTEMPT", "")}
+          - Updated UTC: {datetime.now(timezone.utc).isoformat(timespec="seconds")}
+
+          This file is written automatically by GitHub Actions after every V2 Windows build.
+          '''
+          Path("versiune-v2/BUILD_STATUS.md").write_text(text, encoding="utf-8")
+          '@ | Set-Content write_build_status.py
+          python write_build_status.py
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- "versiune-v2/BUILD_STATUS.md"
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) {
+            git commit -m "Update V2 Windows build status [skip ci]"
+            git push
+          }
+
+      - name: Fail workflow when V2 build failed
+        if: always() && (steps.validate.outcome != 'success' || steps.build.outcome != 'success' || steps.verify.outcome != 'success')
+        shell: powershell
+        run: exit 1
