@@ -19,6 +19,8 @@ from autoscan_parser import parse_autoscan_file, diagnostic_plan
 from autoscan_correlation import correlate, render_correlation
 from autoscan_ro import ro_status, ro_module, ro_title, ro_confidence, ro_vcds_note
 
+FUNCTIONAL_WIRING_VERSION = "2.1-final-validation"
+
 
 def _active_parent(owner):
     index = int(getattr(owner, "_active_workspace_index", 0) or 0)
@@ -206,7 +208,7 @@ def apply():
 
         self._active_workspace_index = index
 
-        # Keep the dashboard alive behind the workspace.  File/message dialogs
+        # Keep the dashboard alive behind the workspace. File/message dialogs
         # owned by the diagnostic engine can therefore never be orphaned behind
         # a hidden main window.
         if not self.isVisible():
