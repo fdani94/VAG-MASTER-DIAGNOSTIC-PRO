@@ -2,7 +2,7 @@ VCDS
 Windows Based VAG/VAS Emulator
 Self-Diagnosis Log
 
-VIN: WVWZZZAUZHW123456   License Plate: V2 DEMO
+VIN: WVWZZZAUZHW123456   License Plate: EXEMPLU ANONIMIZAT
 Mileage: 164250km-102060mi
 Chassis Type: 5G0-VW37
 

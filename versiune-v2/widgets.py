@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import math
-import random
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QPoint, QRectF, Qt, QTimer, Signal
+from PySide6.QtCore import QPoint, QRectF, Qt, Signal
 from PySide6.QtGui import (
     QColor,
     QFont,
@@ -299,7 +297,7 @@ class VehicleHero(QFrame):
         roundel.setFixedSize(62, 62)
         roundel_layout = QVBoxLayout(roundel)
         roundel_layout.setContentsMargins(0, 0, 0, 0)
-        self.brand_label = QLabel("VW")
+        self.brand_label = QLabel("VAG")
         self.brand_label.setObjectName("brandRoundelText")
         self.brand_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         roundel_layout.addWidget(self.brand_label)
@@ -316,8 +314,11 @@ class VehicleHero(QFrame):
         info.addStretch(1)
         metric_row = QHBoxLayout()
         metric_row.setSpacing(8)
-        self.vin_metric = HeroMetric("VIN", vehicle.vin)
-        self.mileage_metric = HeroMetric("Kilometraj", f"{vehicle.mileage_km:,} km".replace(",", "."))
+        self.vin_metric = HeroMetric("VIN", vehicle.vin or "—")
+        self.mileage_metric = HeroMetric(
+            "Kilometraj",
+            f"{vehicle.mileage_km:,} km".replace(",", ".") if vehicle.mileage_km else "—",
+        )
         self.module_metric = HeroMetric("ECU", f"{vehicle.modules} module")
         metric_row.addWidget(self.vin_metric, 2)
         metric_row.addWidget(self.mileage_metric, 1)
@@ -330,11 +331,21 @@ class VehicleHero(QFrame):
         layout.addWidget(self.vehicle_image, 2)
 
     def set_vehicle(self, vehicle) -> None:
-        brand_code = "VW" if "volkswagen" in vehicle.brand.casefold() else "VAG"
+        brand = vehicle.brand.casefold()
+        if "volkswagen" in brand:
+            brand_code = "VW"
+        elif "audi" in brand:
+            brand_code = "AUDI"
+        elif "škoda" in brand or "skoda" in brand:
+            brand_code = "Š"
+        elif "seat" in brand or "cupra" in brand:
+            brand_code = "SEAT"
+        else:
+            brand_code = "VAG"
         self.brand_label.setText(brand_code)
         self.name_label.setText(vehicle.display_name)
-        self.subtitle_label.setText(vehicle.subtitle if vehicle.year else vehicle.engine)
-        self.vin_metric.value_label.setText(vehicle.vin)
+        self.subtitle_label.setText(vehicle.subtitle)
+        self.vin_metric.value_label.setText(vehicle.vin or "—")
         mileage = f"{vehicle.mileage_km:,} km".replace(",", ".") if vehicle.mileage_km else "—"
         self.mileage_metric.value_label.setText(mileage)
         self.module_metric.value_label.setText(f"{vehicle.modules} module")
@@ -364,62 +375,3 @@ class SectionCard(QFrame):
 
     def set_lines(self, lines: tuple[str, ...] | list[str]) -> None:
         self.body.setText("\n".join(f"• {line}" for line in lines))
-
-
-class LiveChart(QWidget):
-    def __init__(self, parent: QWidget | None = None):
-        super().__init__(parent)
-        self.setMinimumHeight(250)
-        self._phase = 0.0
-        self._values = [48.0 + random.uniform(-3, 3) for _ in range(80)]
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.tick)
-        self.timer.start(180)
-
-    def tick(self) -> None:
-        self._phase += 0.17
-        next_value = 50 + 13 * math.sin(self._phase) + 4 * math.sin(self._phase * 2.9) + random.uniform(-2, 2)
-        self._values = self._values[1:] + [next_value]
-        self.update()
-
-    def paintEvent(self, event) -> None:  # type: ignore[override]
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.fillRect(self.rect(), QColor("#08121c"))
-        chart = self.rect().adjusted(45, 18, -18, -34)
-
-        grid_pen = QPen(QColor("#173047"), 1)
-        painter.setPen(grid_pen)
-        for i in range(6):
-            y = chart.top() + i * chart.height() / 5
-            painter.drawLine(chart.left(), int(y), chart.right(), int(y))
-        for i in range(9):
-            x = chart.left() + i * chart.width() / 8
-            painter.drawLine(int(x), chart.top(), int(x), chart.bottom())
-
-        path = QPainterPath()
-        for i, value in enumerate(self._values):
-            x = chart.left() + i * chart.width() / (len(self._values) - 1)
-            y = chart.bottom() - (value / 100.0) * chart.height()
-            if i == 0:
-                path.moveTo(x, y)
-            else:
-                path.lineTo(x, y)
-        painter.setPen(QPen(QColor("#2bc2ff"), 2.2))
-        painter.drawPath(path)
-
-        fill = QPainterPath(path)
-        fill.lineTo(chart.right(), chart.bottom())
-        fill.lineTo(chart.left(), chart.bottom())
-        fill.closeSubpath()
-        gradient = QLinearGradient(0, chart.top(), 0, chart.bottom())
-        gradient.setColorAt(0, QColor(31, 180, 243, 90))
-        gradient.setColorAt(1, QColor(31, 180, 243, 0))
-        painter.fillPath(fill, gradient)
-
-        painter.setPen(QColor("#7f98ad"))
-        painter.setFont(QFont("Segoe UI", 8))
-        painter.drawText(8, chart.top() + 5, "100")
-        painter.drawText(20, chart.center().y() + 4, "50")
-        painter.drawText(26, chart.bottom(), "0")
-        painter.drawText(chart.left(), self.height() - 10, "Timp real")

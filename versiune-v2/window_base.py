@@ -83,17 +83,21 @@ class ProcedureBrowser(QWidget):
         self.safety = QLabel()
         self.safety.setObjectName("safetyBox")
         self.safety.setWordWrap(True)
+        self.path = SectionCard(">", "Traseu în VCDS", [])
         self.prerequisites = SectionCard("✓", "Condiții înainte de începere", [])
         self.steps = SectionCard("1", "Pași ghidați", [])
         self.verification = SectionCard("✓", "Verificare după procedură", [])
+        self.source = SectionCard("S", "Sursă și verificare", [])
 
         self.detail_layout.addWidget(self.title)
         self.detail_layout.addWidget(self.meta)
         self.detail_layout.addWidget(self.description)
         self.detail_layout.addWidget(self.safety)
+        self.detail_layout.addWidget(self.path)
         self.detail_layout.addWidget(self.prerequisites)
         self.detail_layout.addWidget(self.steps)
         self.detail_layout.addWidget(self.verification)
+        self.detail_layout.addWidget(self.source)
         self.detail_layout.addStretch(1)
         self.detail_scroll.setWidget(self.detail)
         splitter.addWidget(self.detail_scroll)
@@ -125,9 +129,11 @@ class ProcedureBrowser(QWidget):
             self.meta.clear()
             self.description.clear()
             self.safety.clear()
+            self.path.set_lines([])
             self.prerequisites.set_lines([])
             self.steps.set_lines([])
             self.verification.set_lines([])
+            self.source.set_lines([])
             return
         procedure: GuidedProcedure = current.data(Qt.ItemDataRole.UserRole)
         self.title.setText(procedure.title)
@@ -136,8 +142,16 @@ class ProcedureBrowser(QWidget):
         )
         self.description.setText(procedure.description)
         self.safety.setText(f"ATENȚIE: {procedure.safety}")
+        self.path.set_lines([procedure.vcds_path or "Calea exactă se confirmă în unitatea identificată."])
         self.prerequisites.set_lines(procedure.prerequisites)
         self.steps.set_lines(
             [f"{index}. {step}" for index, step in enumerate(procedure.steps, start=1)]
         )
         self.verification.set_lines(procedure.verification)
+        self.source.set_lines(
+            [
+                f"Nivel: {'Verificată' if procedure.verified else 'Condițională - confirmați unitatea exactă'}",
+                f"Sursă: {procedure.source_title or 'Catalog local KID Diagnostic'}",
+                f"Referință: {procedure.source_url or 'În baza locală'}",
+            ]
+        )

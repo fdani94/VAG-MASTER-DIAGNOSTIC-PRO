@@ -32,6 +32,7 @@ jobs:
 
       - name: Validate source and tests
         run: |
+          python scripts/build_database.py
           python -m compileall -q .
           python -m unittest discover -s tests -v
 

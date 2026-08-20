@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from data import DTCInfo, ScanResult, dtc_info
+from data import DTCInfo, ScanFault, ScanResult, dtc_info
 from widgets import SectionCard
 from window_base import DetachedWindow, page_header
 
@@ -40,7 +40,7 @@ class DTCWindow(DetachedWindow):
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 4, 0)
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Caută P0401, EGR, turbo...")
+        self.search.setPlaceholderText("Caută după cod, modul, piesă sau descriere...")
         self.search.textChanged.connect(self.refresh_list)
         self.list = QListWidget()
         self.list.setMinimumWidth(315)
@@ -80,16 +80,24 @@ class DTCWindow(DetachedWindow):
         self.warning = QLabel()
         self.warning.setObjectName("safetyBox")
         self.warning.setWordWrap(True)
+        self.original = SectionCard("V", "Text și context original VCDS", [])
+        self.symptoms = SectionCard("i", "Simptome și efecte posibile", [])
         self.causes = SectionCard("!", "Cauze posibile", [])
         self.checks = SectionCard("⌕", "Verificări", [])
+        self.measurements = SectionCard("≈", "Măsurători și traseu VCDS", [])
         self.repairs = SectionCard("⚒", "Direcție de reparație", [])
         self.location = SectionCard("⌖", "Localizare orientativă", [])
+        self.source = SectionCard("S", "Sursă și nivel de confirmare", [])
         detail_layout.addWidget(self.summary)
         detail_layout.addWidget(self.warning)
+        detail_layout.addWidget(self.original)
+        detail_layout.addWidget(self.symptoms)
         detail_layout.addWidget(self.causes)
         detail_layout.addWidget(self.checks)
+        detail_layout.addWidget(self.measurements)
         detail_layout.addWidget(self.repairs)
         detail_layout.addWidget(self.location)
+        detail_layout.addWidget(self.source)
         detail_layout.addStretch(1)
         scroll.setWidget(detail)
         splitter.addWidget(scroll)
@@ -104,20 +112,28 @@ class DTCWindow(DetachedWindow):
         self.refresh_list()
 
     def refresh_list(self) -> None:
-        selected_code = self.list.currentItem().data(Qt.ItemDataRole.UserRole) if self.list.currentItem() else None
+        selected_key = (
+            self.list.currentItem().data(Qt.ItemDataRole.UserRole).key
+            if self.list.currentItem()
+            else None
+        )
         needle = self.search.text().strip().casefold()
         self.list.clear()
-        codes = self.scan.dtc_codes
-        for code in codes:
-            info = dtc_info(code)
-            haystack = f"{info.code} {info.title} {info.system}".casefold()
+        for fault in self.scan.faults:
+            info = dtc_info(fault.display_code, fault)
+            haystack = (
+                f"{info.code} {info.title} {info.system} {fault.title} "
+                f"{fault.module_address} {fault.module_name} {info.component}"
+            ).casefold()
             if needle and needle not in haystack:
                 continue
-            item = QListWidgetItem(f"{info.code}\n{info.title}")
-            item.setData(Qt.ItemDataRole.UserRole, info.code)
+            item = QListWidgetItem(
+                f"{info.code} • Modul {fault.module_address}\n{info.title}"
+            )
+            item.setData(Qt.ItemDataRole.UserRole, fault)
             item.setToolTip(info.summary)
             self.list.addItem(item)
-            if info.code == selected_code:
+            if fault.key == selected_key:
                 self.list.setCurrentItem(item)
         if self.list.count() and self.list.currentRow() < 0:
             self.list.setCurrentRow(0)
@@ -127,19 +143,50 @@ class DTCWindow(DetachedWindow):
     def _selection_changed(self, current: QListWidgetItem | None, previous: QListWidgetItem | None) -> None:
         if current is None:
             return
-        self.show_info(dtc_info(current.data(Qt.ItemDataRole.UserRole)))
+        fault: ScanFault = current.data(Qt.ItemDataRole.UserRole)
+        self.show_info(dtc_info(fault.display_code, fault), fault)
 
-    def show_info(self, info: DTCInfo) -> None:
+    def show_info(self, info: DTCInfo, fault: ScanFault) -> None:
         self.code.setText(info.code)
         self.title.setText(info.title)
         self.system.setText(info.system)
         self.severity.setText(f"Severitate: {info.severity}")
         self.summary.setText(info.summary)
         self.warning.setText(f"IMPORTANT: {info.warning}")
+        original_lines = [
+            f"Modul: {fault.module_address} - {fault.module_name}",
+            f"Text VCDS: {fault.title or 'Nespecificat'}",
+            f"Stare: {fault.status or 'Nespecificată'}",
+        ]
+        if fault.frequency:
+            original_lines.append(f"Frecvență: {fault.frequency}")
+        if fault.mileage:
+            original_lines.append(f"Kilometraj la memorare: {fault.mileage}")
+        if fault.freeze_frame:
+            original_lines.append(
+                f"Date memorate la apariția erorii (text VCDS):\n{fault.freeze_frame}"
+            )
+        self.original.set_lines(original_lines)
+        self.symptoms.set_lines(info.symptoms)
         self.causes.set_lines(info.causes)
         self.checks.set_lines(info.checks)
-        self.repairs.set_lines(info.repairs)
+        self.measurements.set_lines(
+            [
+                f"Componentă/sistem: {info.component}",
+                f"Cale VCDS: {info.test_path}",
+                f"Parametri: {info.parameters}",
+                f"Valori așteptate: {info.expected}",
+            ]
+        )
+        self.repairs.set_lines(info.repairs + info.replacement)
         self.location.set_lines([info.location])
+        self.source.set_lines(
+            [
+                f"Nivel: {'Fișă verificată' if info.verified else 'Definiție de catalog - necesită confirmare'}",
+                f"Sursă: {info.source_title or 'Catalog local KID Diagnostic'}",
+                f"Referință: {info.source_url or 'În baza locală'}",
+            ]
+        )
 
     def _clear_details(self) -> None:
         self.code.setText("0 DTC")
@@ -148,7 +195,11 @@ class DTCWindow(DetachedWindow):
         self.severity.clear()
         self.summary.clear()
         self.warning.clear()
+        self.original.set_lines([])
+        self.symptoms.set_lines([])
         self.causes.set_lines([])
         self.checks.set_lines([])
+        self.measurements.set_lines([])
         self.repairs.set_lines([])
         self.location.set_lines([])
+        self.source.set_lines([])

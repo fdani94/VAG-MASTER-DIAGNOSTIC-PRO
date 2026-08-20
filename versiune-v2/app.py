@@ -13,13 +13,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from data import (
-    ADAPTATION_PROCEDURES,
-    CODING_PROCEDURES,
-    SERVICE_PROCEDURES,
-    ScanResult,
-    default_scan,
-)
+from data import ScanResult, empty_scan, load_procedures
+from database import get_database
 from dtc_window import DTCWindow
 from feature_windows import (
     GuidedProcedureWindow,
@@ -31,12 +26,12 @@ from scan_window import ScanWindow
 from widgets import FeatureTile, StatusChip, TitleBar, VehicleHero
 
 FEATURES = (
-    ("scan", "SCANARE AUTO", "Toate modulele", 0),
+    ("scan", "ÎNCARCĂ AUTO-SCAN", "TXT / LOG / PDF VCDS", 0),
     ("dtc", "ERORI DTC", "Cauze și reparații", 1),
     ("coding", "CODĂRI", "Proceduri ghidate", 2),
     ("adaptation", "ADAPTĂRI", "Calibrări și inițializări", 3),
-    ("service", "SERVICE", "Resetări și mentenanță", 4),
-    ("live", "DATE LIVE", "Grafice și parametri", 5),
+    ("service", "ÎNTREȚINERE", "Service și resetări", 4),
+    ("live", "VALORI MĂSURATE", "Date memorate și parametri", 5),
     ("repair", "GHID REPARAȚII", "Piese, verificări, pași", 6),
     ("reports", "RAPOARTE PDF", "Export profesional", 7),
 )
@@ -50,7 +45,8 @@ class MainWindow(QMainWindow):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.resize(1536, 920)
         self.setMinimumSize(1260, 780)
-        self.scan: ScanResult = default_scan()
+        self.database_stats = get_database().stats()
+        self.scan: ScanResult = empty_scan()
         self.windows: dict[str, QMainWindow] = {}
 
         outer = QWidget()
@@ -66,8 +62,8 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         self.title_bar = TitleBar(self)
-        self.interface_chip = StatusChip("◉", "MOD DEMO", "warn")
-        self.voltage_chip = StatusChip("▣", "13.8 V", "info")
+        self.interface_chip = StatusChip("◉", "AȘTEAPTĂ AUTO-SCAN", "info")
+        self.voltage_chip = StatusChip("▣", "PDF VCDS ACTIV", "ok")
         self.title_bar.add_status_widget(self.interface_chip)
         self.title_bar.add_status_widget(self.voltage_chip)
         layout.addWidget(self.title_bar)
@@ -111,11 +107,16 @@ class MainWindow(QMainWindow):
             box.addWidget(value_label)
             return box
 
-        layout.addLayout(group("Tehnician", "MOD EXPERT GHIDAT"))
+        layout.addLayout(group("Mod lucru", "ANALIZĂ AUTO-SCAN VCDS"))
         layout.addStretch(1)
-        layout.addLayout(group("Sursă date", "AUTO-SCAN / DEMO"))
-        layout.addLayout(group("Bază locală", "V2 • ROMÂNĂ"))
-        layout.addLayout(group("Siguranță", "BACKUP ÎNAINTE DE CODARE"))
+        layout.addLayout(group("Sursă date", "AUTO-SCAN TXT / LOG / PDF"))
+        layout.addLayout(
+            group(
+                "Bază profesională",
+                f"{self.database_stats['DTC']:,} DTC • {self.database_stats['proceduri']} PROCEDURI".replace(",", "."),
+            )
+        )
+        layout.addLayout(group("Siguranță", "COPIE DE SIGURANȚĂ ÎNAINTE DE CODARE"))
         settings = QPushButton("⚙  SETĂRI")
         settings.clicked.connect(self.show_settings)
         layout.addWidget(settings)
@@ -147,26 +148,26 @@ class MainWindow(QMainWindow):
         if key == "coding":
             return GuidedProcedureWindow(
                 "Codări",
-                "Proceduri filtrate după modul și platformă, cu backup și verificare după modificare.",
-                CODING_PROCEDURES,
+                "Proceduri filtrate după modul și platformă, cu copie de siguranță și verificare după modificare.",
+                load_procedures("coding"),
                 self,
             )
         if key == "adaptation":
             return GuidedProcedureWindow(
                 "Adaptări",
                 "Calibrări și inițializări explicate pas cu pas, fără valori universale riscante.",
-                ADAPTATION_PROCEDURES,
+                load_procedures("adaptation"),
                 self,
             )
         if key == "service":
             return GuidedProcedureWindow(
-                "Service",
+                "Întreținere și service",
                 "Funcții de întreținere cu condiții, pași, criterii de succes și avertizări.",
-                SERVICE_PROCEDURES,
+                load_procedures("service"),
                 self,
             )
         if key == "live":
-            return LiveDataWindow(self)
+            return LiveDataWindow(self.scan, self)
         if key == "repair":
             return RepairGuideWindow(self)
         if key == "reports":
@@ -200,7 +201,7 @@ class MainWindow(QMainWindow):
         self.scan = scan
         self.hero.set_vehicle(scan.vehicle)
         self.interface_chip.set_status("AUTO-SCAN IMPORTAT", "ok", "✓")
-        for key in ("dtc", "reports", "scan"):
+        for key in ("dtc", "reports", "scan", "live"):
             window = self.windows.get(key)
             if window is not None and hasattr(window, "set_scan"):
                 window.set_scan(scan)  # type: ignore[attr-defined]
@@ -209,12 +210,15 @@ class MainWindow(QMainWindow):
         QMessageBox.information(
             self,
             "Setări V2",
-            "Versiunea V2 rulează în mod sigur de import și demonstrație.\n\n"
-            "• Auto-Scan VCDS: activ\n"
-            "• Raport PDF: activ\n"
-            "• Ghiduri locale: active\n"
-            "• Scriere directă în ECU: dezactivată până la validarea driverului\n"
-            "• Interfață hardware: etapă viitoare separată",
+            "Versiunea V2 profesională lucrează exclusiv cu date reale importate.\n\n"
+            "• Auto-Scan VCDS TXT / LOG / PDF: activ\n"
+            f"• Bază locală: {self.database_stats['DTC']:,} DTC, "
+            f"{self.database_stats['proceduri']} proceduri, "
+            f"{self.database_stats['generații']} generații\n"
+            "• Validare automată erori declarate vs. erori extrase: activă\n"
+            "• Raport PDF detaliat de atelier: activ\n"
+            "• Date generate artificial: inexistente\n"
+            "• Scriere directă în ECU: dezactivată pentru siguranță",
         )
 
     def closeEvent(self, event) -> None:  # type: ignore[override]

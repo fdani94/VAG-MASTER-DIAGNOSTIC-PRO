@@ -12,6 +12,9 @@ if errorlevel 1 goto :error
 pip install -r requirements.txt pyinstaller pillow
 if errorlevel 1 goto :error
 
+python scripts\build_database.py
+if errorlevel 1 goto :error
+
 python scripts\create_icon.py
 if errorlevel 1 goto :error
 

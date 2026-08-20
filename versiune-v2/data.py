@@ -2,33 +2,71 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from functools import lru_cache
+
+from localization import romanianize
 
 
 @dataclass(frozen=True)
 class Vehicle:
-    brand: str = "Volkswagen"
-    model: str = "Golf VII"
-    year: int = 2017
-    engine: str = "2.0 TDI"
-    vin: str = "WVWZZZAUZHW123456"
-    mileage_km: int = 164_250
-    modules: int = 27
+    brand: str = ""
+    model: str = ""
+    year: int = 0
+    engine: str = ""
+    engine_code: str = ""
+    chassis: str = ""
+    platform: str = ""
+    vin: str = ""
+    license_plate: str = ""
+    mileage_km: int = 0
+    modules: int = 0
 
     @property
     def display_name(self) -> str:
-        return f"{self.brand} {self.model}"
+        if self.brand or self.model:
+            return " ".join(x for x in (self.brand, self.model) if x).strip()
+        return "Niciun vehicul încărcat"
 
     @property
     def subtitle(self) -> str:
-        return f"{self.year} • {self.engine}"
+        values = [str(self.year) if self.year else "", self.engine, self.chassis]
+        return " • ".join(value for value in values if value) or "Importați un Auto-Scan VCDS"
 
 
-@dataclass(frozen=True)
+@dataclass
+class ScanFault:
+    module_address: str = ""
+    module_name: str = ""
+    code: str = ""
+    vag_code: str = ""
+    title: str = ""
+    status: str = ""
+    raw_block: str = ""
+    freeze_frame: str = ""
+    frequency: str = ""
+    mileage: str = ""
+    priority: str = ""
+
+    @property
+    def display_code(self) -> str:
+        return self.code or self.vag_code or "DTC"
+
+    @property
+    def key(self) -> str:
+        return f"{self.module_address}:{self.display_code}:{self.title}".casefold()
+
+
+@dataclass
 class ModuleResult:
     address: str
     name: str
-    status: str = "În așteptare"
+    status: str = "Necitit"
     dtc_count: int = 0
+    part_no: str = ""
+    component: str = ""
+    coding: str = ""
+    faults: list[ScanFault] = field(default_factory=list)
+    declared_fault_count: int | None = None
 
 
 @dataclass(frozen=True)
@@ -42,7 +80,25 @@ class DTCInfo:
     checks: tuple[str, ...]
     repairs: tuple[str, ...]
     location: str
-    warning: str = "Confirmați cauza prin măsurători înainte de înlocuirea pieselor."
+    warning: str
+    symptoms: tuple[str, ...] = ()
+    component: str = ""
+    parameters: str = ""
+    expected: str = ""
+    test_path: str = ""
+    replacement: tuple[str, ...] = ()
+    original_title: str = ""
+    verified: bool = False
+    source_title: str = ""
+    source_url: str = ""
+
+
+@dataclass(frozen=True)
+class DTCSearchHit:
+    code: str
+    title: str
+    summary: str
+    verified: bool
 
 
 @dataclass(frozen=True)
@@ -57,15 +113,31 @@ class GuidedProcedure:
     steps: tuple[str, ...]
     verification: tuple[str, ...]
     safety: str
+    vcds_path: str = ""
+    source_title: str = ""
+    source_url: str = ""
+    verified: bool = False
 
 
 @dataclass
 class ScanResult:
     vehicle: Vehicle = field(default_factory=Vehicle)
     modules: list[ModuleResult] = field(default_factory=list)
-    dtc_codes: list[str] = field(default_factory=list)
-    source_name: str = "Demonstrație V2"
+    faults: list[ScanFault] = field(default_factory=list)
+    source_name: str = "Niciun Auto-Scan încărcat"
+    source_path: str = ""
     raw_text: str = ""
+    declared_fault_count: int | None = None
+    parsed_fault_count: int = 0
+    validation_ok: bool | None = None
+    validation_message: str = "Importați un fișier Auto-Scan VCDS TXT, LOG sau PDF."
+    validation_details: list[str] = field(default_factory=list)
+    voltage_start: float | None = None
+    voltage_end: float | None = None
+
+    @property
+    def dtc_codes(self) -> list[str]:
+        return [fault.display_code for fault in self.faults]
 
     @property
     def fault_modules(self) -> int:
@@ -73,366 +145,182 @@ class ScanResult:
 
     @property
     def total_dtc(self) -> int:
-        explicit = sum(module.dtc_count for module in self.modules)
-        return max(explicit, len(self.dtc_codes))
+        return len(self.faults)
 
 
-SAMPLE_MODULES: tuple[ModuleResult, ...] = (
-    ModuleResult("01", "Motor", "OK"),
-    ModuleResult("02", "Transmisie automată", "OK"),
-    ModuleResult("03", "ABS / ESP", "OK"),
-    ModuleResult("08", "Climatizare", "OK"),
-    ModuleResult("09", "Electronică centrală", "OK"),
-    ModuleResult("15", "Airbag", "1 eroare", 1),
-    ModuleResult("16", "Coloana direcției", "OK"),
-    ModuleResult("17", "Bord / Instrumente", "OK"),
-    ModuleResult("19", "CAN Gateway", "OK"),
-    ModuleResult("42", "Ușa șofer", "OK"),
-    ModuleResult("52", "Ușa pasager", "OK"),
-    ModuleResult("5F", "Sistem multimedia", "OK"),
-)
-
-
-DTC_DATABASE: dict[str, DTCInfo] = {
-    "P0401": DTCInfo(
-        code="P0401",
-        title="Debit insuficient în sistemul EGR",
-        severity="Ridicată",
-        system="Motor / Emisii",
-        summary="ECU detectează un debit EGR mai mic decât valoarea solicitată.",
-        causes=(
-            "Supapă EGR încărcată cu depuneri sau blocată",
-            "Conducte ori răcitor EGR obturate",
-            "Senzor de poziție EGR sau cablaj defect",
-            "Debitmetru cu valori neplauzibile",
-        ),
-        checks=(
-            "Salvați freeze-frame-ul și verificați când apare eroarea",
-            "Comparați poziția EGR solicitată cu poziția reală",
-            "Verificați debitul de aer măsurat și etanșeitatea admisiei",
-            "Testați alimentarea, masa și semnalul actuatorului EGR",
-        ),
-        repairs=(
-            "Curățați traseul EGR numai după inspecție",
-            "Reparați cablajul sau conectorii deteriorați",
-            "Înlocuiți componenta doar dacă testele confirmă defectul",
-            "Ștergeți DTC, efectuați test rutier și rescanați",
-        ),
-        location="Între galeria de evacuare și galeria de admisie; poziția exactă depinde de codul motor.",
-    ),
-    "P0299": DTCInfo(
-        code="P0299",
-        title="Presiune de supraalimentare prea mică",
-        severity="Ridicată",
-        system="Motor / Turbo",
-        summary="Presiunea reală de supraalimentare rămâne sub valoarea cerută.",
-        causes=(
-            "Pierdere pe furtunurile sau intercoolerul de supraalimentare",
-            "Actuator turbo, geometrie variabilă sau electrovalvă defectă",
-            "Vacuum insuficient la sistemele pneumatice",
-            "Senzor MAP sau debitmetru cu valori incorecte",
-        ),
-        checks=(
-            "Comparați boost specified cu boost actual în sarcină",
-            "Efectuați test de etanșeitate pe traseul de aer",
-            "Verificați vacuumul și cursa actuatorului",
-            "Inspectați furtunurile, colierele și intercoolerul",
-        ),
-        repairs=(
-            "Remediați pierderile de aer sau vacuum",
-            "Curățați ori reparați mecanismul doar după confirmare",
-            "Calibrați actuatorul conform procedurii modelului",
-            "Test rutier, ștergere DTC și rescanare",
-        ),
-        location="Turbocompresorul este montat pe galeria de evacuare; actuatorul se află pe carcasa turbinei.",
-    ),
-    "P2002": DTCInfo(
-        code="P2002",
-        title="Eficiența filtrului de particule sub limită",
-        severity="Ridicată",
-        system="Motor / DPF",
-        summary="Valorile calculate indică o eficiență DPF necorespunzătoare.",
-        causes=(
-            "Filtru încărcat, fisurat sau înlocuit necorespunzător",
-            "Senzor de presiune diferențială ori conducte defecte",
-            "Senzori temperatură gaze cu valori neplauzibile",
-            "Regenerări întrerupte din cauza altor erori de motor",
-        ),
-        checks=(
-            "Citiți masa de funingine, masa de cenușă și presiunea diferențială",
-            "Verificați conductele senzorului de presiune",
-            "Confirmați temperaturile EGT înainte și după DPF",
-            "Verificați condițiile și istoricul regenerărilor",
-        ),
-        repairs=(
-            "Remediați întâi erorile care blochează regenerarea",
-            "Curățați profesional ori înlocuiți DPF dacă testele o cer",
-            "Nu resetați cenușa fără o intervenție reală asupra filtrului",
-            "Verificați presiunea după reparație și rescanați",
-        ),
-        location="Pe linia de evacuare, după turbocompresor și catalizatorul de oxidare, în funcție de motorizare.",
-    ),
-    "P0671": DTCInfo(
-        code="P0671",
-        title="Circuit bujie incandescentă cilindrul 1",
-        severity="Medie",
-        system="Motor / Preîncălzire",
-        summary="Circuitul electric al bujiei cilindrului 1 este în afara parametrilor.",
-        causes=(
-            "Bujie incandescentă întreruptă sau cu rezistență incorectă",
-            "Contact slab în fișă sau cablaj",
-            "Modul de comandă bujii defect",
-        ),
-        checks=(
-            "Măsurați rezistența fără a aplica direct 12 V",
-            "Comparați cu celelalte bujii la aceeași temperatură",
-            "Verificați ieșirea modulului și cablajul",
-        ),
-        repairs=(
-            "Reparați contactele ori cablajul",
-            "Înlocuiți bujia cu specificația corectă",
-            "Ștergeți eroarea și testați la pornire rece",
-        ),
-        location="În chiulasă, lângă injectorul cilindrului 1; accesul diferă după codul motor.",
-    ),
-    "U1121": DTCInfo(
-        code="U1121",
-        title="Mesaj CAN lipsă sau neplauzibil",
-        severity="Medie",
-        system="Rețea CAN",
-        summary="Un modul nu primește mesajul așteptat de la altă unitate de comandă.",
-        causes=(
-            "Tensiune joasă sau alimentare instabilă",
-            "Modul offline ori configurat incorect",
-            "Cablaj CAN sau conector cu rezistență de contact",
-        ),
-        checks=(
-            "Efectuați Auto-Scan complet și identificați modulul sursă",
-            "Verificați tensiunea bateriei și istoricul erorii",
-            "Verificați alimentările și integritatea rețelei CAN",
-        ),
-        repairs=(
-            "Reparați alimentarea sau cablajul confirmat defect",
-            "Restabiliți codarea originală dacă eroarea a apărut după modificări",
-            "Ștergeți DTC și rescanați toate modulele",
-        ),
-        location="Rețeaua CAN traversează mai multe module; diagnosticul trebuie pornit de la modulul care nu comunică.",
-    ),
-}
-
-
-GENERIC_DTC = DTCInfo(
-    code="DTC",
-    title="Cod nerecunoscut în baza locală",
-    severity="De verificat",
-    system="Necunoscut",
-    summary="Codul a fost găsit în Auto-Scan, dar nu are încă o fișă dedicată în baza V2.",
-    causes=("Consultați descrierea exactă din modul și freeze-frame-ul.",),
-    checks=(
-        "Salvați Auto-Scan-ul original",
-        "Identificați modulul, piesa și condițiile în care apare",
-        "Verificați alimentările, cablajul și valorile măsurate",
-    ),
-    repairs=(
-        "Remediați cauza confirmată prin măsurători",
-        "Nu înlocuiți piese doar pe baza codului",
-        "Ștergeți DTC și verificați dacă reapare",
-    ),
-    location="Poziția depinde de modul, model, an și codul motor.",
-)
-
-
-CODING_PROCEDURES: tuple[GuidedProcedure, ...] = (
-    GuidedProcedure(
-        "Coming Home / Leaving Home",
-        "Codare",
-        "09 – Electronică centrală",
-        "PQ35 / MQB, în funcție de echipare",
-        "10–15 min",
-        "Configurarea funcțiilor de iluminare la încuiere și descuiere.",
-        ("Tensiune stabilă", "Auto-Scan salvat", "Codarea originală exportată"),
-        (
-            "Selectați exact vehiculul și identificați BCM-ul",
-            "Deschideți Adaptation sau Long Coding, după platformă",
-            "Căutați funcția denumită Coming Home / Leaving Home",
-            "Modificați numai opțiunea documentată pentru modulul identificat",
-            "Salvați și ciclizați contactul",
-        ),
-        ("Funcția lucrează conform setării", "Nu apar DTC noi", "Codarea originală rămâne arhivată"),
-        "Nu folosiți valori copiate de la alt număr de piesă BCM.",
-    ),
-    GuidedProcedure(
-        "Închidere automată la deplasare",
-        "Codare",
-        "09 / 46 – Confort",
-        "PQ / MQB",
-        "5–10 min",
-        "Activează blocarea automată a ușilor la viteza suportată de modul.",
-        ("Vehicul staționat", "Geam șofer deschis", "Backup codare"),
-        (
-            "Identificați modulul care gestionează închiderea centralizată",
-            "Căutați Auto Lock / locking while driving",
-            "Activați funcția disponibilă în modul",
-            "Salvați și testați la viteză redusă într-o zonă sigură",
-        ),
-        ("Ușile se blochează o singură dată", "Deblocarea interioară funcționează", "Fără DTC"),
-        "Păstrați posibilitatea de deschidere din interior și respectați echiparea vehiculului.",
-    ),
-    GuidedProcedure(
-        "Mișcare ace la pornire",
-        "Codare",
-        "17 – Instrumente",
-        "UDS / MQB",
-        "5 min",
-        "Activează testul acelor la punerea contactului, dacă este suportat.",
-        ("Cluster compatibil", "Backup adaptări"),
-        (
-            "Deschideți modulul 17 – Instrumente",
-            "În Adaptation căutați staging / indicator celebration",
-            "Activați funcția dacă apare nominal în modul",
-            "Ciclizați contactul și verificați bordul",
-        ),
-        ("Acele execută o singură cursă", "Nicio avertizare nouă"),
-        "Nu forțați o funcție absentă din datasetul modulului.",
-    ),
-)
-
-
-ADAPTATION_PROCEDURES: tuple[GuidedProcedure, ...] = (
-    GuidedProcedure(
-        "Înregistrare baterie",
-        "Adaptare",
-        "19 / 61 / 01 – dependent de platformă",
-        "VAG cu management energetic",
-        "10 min",
-        "Înregistrează o baterie nouă cu tehnologia și capacitatea corecte.",
-        ("Baterie montată corect", "Încărcător stabil", "Tip și capacitate cunoscute"),
-        (
-            "Identificați modulul de management al energiei",
-            "Citiți și salvați datele bateriei vechi",
-            "Introduceți producătorul, capacitatea, tehnologia și serialul conform suportului modulului",
-            "Confirmați adaptarea și ciclizați contactul",
-        ),
-        ("Noua baterie este memorată", "Tensiunea de încărcare este plauzibilă", "Fără DTC energetic"),
-        "AGM/EFB/plumb-acid și capacitatea trebuie să corespundă bateriei montate.",
-    ),
-    GuidedProcedure(
-        "Calibrare senzor unghi volan",
-        "Adaptare",
-        "03 / 44 – ABS / Direcție",
-        "Dependent de platformă",
-        "10–20 min",
-        "Inițializează poziția zero după intervenții autorizate.",
-        ("Geometrie corectă", "Volan centrat", "Fără defect mecanic"),
-        (
-            "Verificați DTC și poziția volanului",
-            "Selectați Basic Settings nominal pentru steering angle",
-            "Urmați instrucțiunile afișate de modul",
-            "Efectuați testul rutier cerut de procedură",
-        ),
-        ("Unghi aproape de 0° cu roțile drepte", "Martorii se sting", "Basic setting: OK"),
-        "Nu calibrați pentru a masca o geometrie sau o piesă defectă.",
-    ),
-    GuidedProcedure(
-        "Setare de bază clapetă accelerație",
-        "Adaptare",
-        "01 – Motor",
-        "Benzină, dacă ECU suportă",
-        "5–10 min",
-        "Rulează învățarea pozițiilor clapetei după curățare sau înlocuire.",
-        ("Motor oprit", "Contact pus", "Baterie stabilă", "Fără DTC de alimentare"),
-        (
-            "Selectați Basic Settings nominal pentru throttle adaptation",
-            "Porniți procedura fără a atinge accelerația",
-            "Așteptați mesajul Finished correctly / ADP OK",
-            "Opriți contactul conform instrucțiunilor ECU",
-        ),
-        ("Adaptarea este acceptată", "Ralanti stabil după pornire", "DTC nu reapare"),
-        "Procedura și condițiile exacte diferă după ECU și cod motor.",
-    ),
-)
-
-
-SERVICE_PROCEDURES: tuple[GuidedProcedure, ...] = (
-    GuidedProcedure(
-        "Resetare interval service",
-        "Service",
-        "17 – Instrumente / SRI Reset",
-        "Toate platformele suportate",
-        "5 min",
-        "Resetează intervalul numai după efectuarea reală a operației de întreținere.",
-        ("Revizie efectuată", "Ulei cu specificația corectă", "Kilometraj notat"),
-        (
-            "Deschideți Applications → SRI Reset sau funcția nominală a modulului 17",
-            "Citiți valorile curente și salvați-le",
-            "Selectați tipul corect de service fix sau flexibil",
-            "Aplicați și verificați noua scadență în bord",
-        ),
-        ("Noua scadență este corectă", "Avertizarea nu reapare", "Istoricul este salvat"),
-        "Nu resetați intervalul fără ca revizia să fi fost efectuată.",
-    ),
-    GuidedProcedure(
-        "Setare de bază frână de parcare",
-        "Service",
-        "53 – Parking Brake",
-        "Vehicule cu EPB",
-        "15–25 min",
-        "Deschide și închide etrierele prin funcția de service suportată.",
-        ("Vehicul securizat", "Încărcător stabil", "Piese montate corect"),
-        (
-            "Salvați DTC și selectați modul de schimb plăcuțe",
-            "Comandați deschiderea numai când mecanismul este liber",
-            "Efectuați lucrarea mecanică",
-            "Comandați închiderea și rulați basic setting dacă este cerut",
-        ),
-        ("EPB funcționează simetric", "Fără zgomote anormale", "Fără DTC"),
-        "Nu acționați EPB cu etrierul demontat sau fără sursă stabilă.",
-    ),
-    GuidedProcedure(
-        "Verificare regenerare DPF",
-        "Service",
-        "01 – Motor",
-        "TDI cu DPF",
-        "20–40 min",
-        "Ghidează verificarea condițiilor înaintea unei regenerări controlate.",
-        ("Nivel ulei corect", "Fără scurgeri", "Fără DTC care blochează regenerarea"),
-        (
-            "Citiți funinginea, cenușa, presiunea și temperaturile",
-            "Verificați dacă regenerarea este permisă de ECU",
-            "Alegeți numai procedura nominală pentru codul motor",
-            "Monitorizați temperaturile și opriți dacă apar condiții nesigure",
-        ),
-        ("Presiunea și funinginea scad plauzibil", "Temperaturile revin normal", "Fără DTC nou"),
-        "Nu forțați regenerarea la un filtru deteriorat, supraîncărcat sau cu ulei diluat.",
-    ),
-)
-
-
-def dtc_info(code: str) -> DTCInfo:
-    normalized = code.strip().upper()
-    if normalized in DTC_DATABASE:
-        return DTC_DATABASE[normalized]
-    return DTCInfo(
-        code=normalized or GENERIC_DTC.code,
-        title=GENERIC_DTC.title,
-        severity=GENERIC_DTC.severity,
-        system=GENERIC_DTC.system,
-        summary=GENERIC_DTC.summary,
-        causes=GENERIC_DTC.causes,
-        checks=GENERIC_DTC.checks,
-        repairs=GENERIC_DTC.repairs,
-        location=GENERIC_DTC.location,
-        warning=GENERIC_DTC.warning,
-    )
+def empty_scan() -> ScanResult:
+    return ScanResult()
 
 
 def default_scan() -> ScanResult:
-    return ScanResult(
-        vehicle=Vehicle(),
-        modules=list(SAMPLE_MODULES),
-        dtc_codes=["P0401"],
-        source_name="Demonstrație V2",
+    """Compatibilitate API: starea implicită este goală și nu conține date artificiale."""
+    return empty_scan()
+
+
+def _lines(value: str, fallback: tuple[str, ...]) -> tuple[str, ...]:
+    import re
+
+    text = (value or "").strip()
+    if not text:
+        return fallback
+    text = re.sub(r"(?<!^)(?=\d+[.)]\s+)", "\n", text)
+    values = []
+    for item in re.split(r"\r?\n|\s*;\s*", text):
+        cleaned = re.sub(r"^\s*\d+[.)]\s*", "", item).strip(" -")
+        if cleaned:
+            values.append(cleaned)
+    return tuple(romanianize(item) for item in values) or fallback
+
+
+def _system_for(code: str, module_address: str = "", module_name: str = "") -> str:
+    if module_address or module_name:
+        return " • ".join(x for x in (module_address, romanianize(module_name)) if x)
+    return {
+        "P": "Grup motopropulsor",
+        "B": "Caroserie și confort",
+        "C": "Șasiu",
+        "U": "Comunicație și rețea",
+    }.get(code[:1], "Sistem VAG specific")
+
+
+def dtc_info(code: str, fault: ScanFault | None = None) -> DTCInfo:
+    from database import get_database
+
+    db = get_database()
+    normalized = db.normalize_code(code)
+    row = db.lookup_dtc(normalized)
+    module_address = fault.module_address if fault else ""
+    module_name = fault.module_name if fault else ""
+    original_title = (fault.title if fault else "") or (str(row["title"]) if row else "")
+    title = (
+        str(row["title_ro"])
+        if row and "title_ro" in row.keys() and row["title_ro"]
+        else romanianize(str(row["title"]))
+        if row
+        else romanianize(original_title) or "Cod neindexat în baza locală"
     )
+    keys = set(row.keys()) if row else set()
+
+    def value(name: str, default=""):
+        return row[name] if row and name in keys and row[name] not in (None, "") else default
+
+    generic_causes = (
+        "Alimentare, masă, siguranță, conector sau cablaj cu contact imperfect",
+        "Senzorul, actuatorul ori unitatea indicată de textul exact al erorii",
+        "Defect secundar produs de alt modul sau de o tensiune necorespunzătoare",
+    )
+    generic_checks = (
+        "Salvați Auto-Scan-ul original și analizați statusul și valorile memorate la apariția erorii",
+        "Verificați tensiunea bateriei, alimentările, masele, siguranțele și conectorii",
+        "Comparați valorile solicitate cu cele reale în Valori de măsură avansate",
+        "Folosiți testele de actuatori sau setările de bază numai dacă procedura unității le cere",
+    )
+    generic_repairs = (
+        "Remediați numai cauza confirmată prin măsurători și inspecție",
+        "Nu înlocuiți automat o componentă doar pe baza codului DTC",
+        "După reparație ștergeți erorile, efectuați testul funcțional și repetați Auto-Scan-ul",
+    )
+    description = romanianize(str(value("description", "")))
+    summary = description or (
+        f"Codul {normalized} a fost identificat de VCDS. Textul raportat este: "
+        f"{romanianize(original_title)}. Interpretarea exactă depinde de modul, "
+        "software, motorizare și condițiile memorate la apariția erorii."
+    )
+    verified = bool(value("verified", 0))
+    warning = (
+        "Fișă VAG detaliată. Confirmați totuși cauza prin măsurători înainte de înlocuirea pieselor."
+        if verified
+        else "Definiție de catalog. Textul original VCDS și identificarea exactă a unității au prioritate; confirmați cauza prin măsurători."
+    )
+    return DTCInfo(
+        code=normalized or code.strip().upper() or "DTC",
+        title=title,
+        severity=romanianize(str(value("severity", "De evaluat"))),
+        system=_system_for(normalized, module_address, module_name),
+        summary=summary,
+        symptoms=_lines(
+            str(value("symptoms", "")),
+            ("Simptomele se confirmă pe vehicul și din condițiile memorate la apariția erorii.",),
+        ),
+        causes=_lines(str(value("causes", "")), generic_causes),
+        checks=_lines(str(value("diagnosis", "")), generic_checks),
+        repairs=_lines(str(value("repair", "")), generic_repairs),
+        location=romanianize(
+            str(
+                value(
+                    "component_location",
+                    "Poziția exactă se stabilește după model, generație, cod motor și numărul piesei.",
+                )
+            )
+        ),
+        warning=warning,
+        component=romanianize(
+            str(value("component", "Componenta se identifică după textul DTC, modul și codul motor."))
+        ),
+        parameters=romanianize(
+            str(
+                value(
+                    "vcds_parameters",
+                    "Valori de măsură avansate: comparați valoarea solicitată cu valoarea reală.",
+                )
+            )
+        ),
+        expected=romanianize(
+            str(
+                value(
+                    "expected_values",
+                    "Folosiți limitele documentate de unitatea de comandă; nu există o valoare universală.",
+                )
+            )
+        ),
+        test_path=romanianize(
+            str(
+                value(
+                    "test_path",
+                    f"[{module_address or 'Modul'}] > Coduri de eroare > Valori de măsură avansate",
+                )
+            )
+        ),
+        replacement=_lines(
+            str(value("replacement_steps", "")),
+            ("Înlocuiți componenta numai după confirmarea electrică și mecanică a defectului.",),
+        ),
+        original_title=original_title,
+        verified=verified,
+        source_title=romanianize(
+            str(value("source_title", "Catalog local KID Diagnostic"))
+        ),
+        source_url=str(value("source_url", "")),
+    )
+
+
+def search_dtc_infos(query: str, limit: int = 300) -> list[DTCSearchHit]:
+    from database import get_database
+
+    db = get_database()
+    hits: list[DTCSearchHit] = []
+    for row in db.search_dtcs(query, limit):
+        verified = bool(row["verified"])
+        hits.append(
+            DTCSearchHit(
+                code=str(row["code"]),
+                title=str(row["title_ro"] or romanianize(str(row["title"]))),
+                summary=(
+                    "Fișă VAG detaliată - deschideți codul pentru diagnostic, măsurători și surse."
+                    if verified
+                    else "Definiție de catalog - confirmați textul exact VCDS și condițiile memorate."
+                ),
+                verified=verified,
+            )
+        )
+    return hits
+
+
+@lru_cache(maxsize=3)
+def load_procedures(kind: str) -> tuple[GuidedProcedure, ...]:
+    from database import get_database
+
+    return tuple(get_database().guided_procedures(kind))
 
 
 def find_procedures(items: Iterable[GuidedProcedure], query: str) -> list[GuidedProcedure]:
@@ -443,5 +331,5 @@ def find_procedures(items: Iterable[GuidedProcedure], query: str) -> list[Guided
         item
         for item in items
         if needle
-        in f"{item.title} {item.category} {item.module} {item.platform} {item.description}".casefold()
+        in f"{item.title} {item.category} {item.module} {item.platform} {item.description} {item.vcds_path}".casefold()
     ]

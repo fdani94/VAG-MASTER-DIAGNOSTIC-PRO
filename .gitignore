@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+
+.venv/
+build/
+dist/
+
+output/
+tmp/
+
+versiune-v2/assets/*.building.db*
+versiune-v2/assets/vag_master_v2.db
+versiune-v2/assets/*.building.db.gz
+versiune-v2/assets/*.db-journal
+versiune-v2/assets/*.db-wal
+versiune-v2/assets/*.db-shm
