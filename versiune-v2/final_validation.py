@@ -48,6 +48,8 @@ def find_generation_for_procedure(win, page, app):
 
 def find_generation_with_modules(win, app):
     rows = win.con.execute("SELECT DISTINCT generation_id FROM generation_modules ORDER BY generation_id LIMIT 800").fetchall()
+    if not rows:
+        rows = win.con.execute("SELECT id AS generation_id FROM generations ORDER BY id LIMIT 800").fetchall()
     for row in rows:
         gid = row["generation_id"]
         win.selected_generation_id = gid
@@ -78,7 +80,6 @@ def main():
     assert len(win._workspace_pages) == 8
     assert win.minimumWidth() <= 800 and win.minimumHeight() <= 600
 
-    # Responsive UI validation.
     sizes = [(800, 600, 2, 2), (1024, 700, 2, 2), (1366, 768, 3, 4), (1600, 900, 4, 4)]
     for width, height, card_cols, stat_cols in sizes:
         win.resize(width, height); app.processEvents()
@@ -89,14 +90,12 @@ def main():
         assert shot.width() > 0 and shot.height() > 0
         assert shot.save(str(ROOT / f"v2_final_{width}x{height}.png"), "PNG")
 
-    # Real vehicle selector.
     assert find_first_vehicle(win, app), "No selectable vehicle"
     confirm = next(b for b in win.findChildren(QPushButton) if b.text() == "CONFIRMĂ VEHICULUL")
     confirm.click(); app.processEvents()
     assert win.selected_generation_id is not None
     original_gid = win.selected_generation_id
 
-    # All eight dashboard cards must open distinct top-level windows.
     cards = win.findChildren(ui_v2.FeatureCard)
     assert len(cards) == 8
     opened = set()
@@ -110,7 +109,6 @@ def main():
         win.show_dashboard(); app.processEvents()
     assert opened == set(range(1, 9)), opened
 
-    # Auto-Scan: actual button -> parser -> diagnostic plan -> detail -> PDF.
     win.selected_generation_id = original_gid
     sample = ROOT / "sample_vcds_autoscan_final.txt"
     sample.write_text(
@@ -144,7 +142,6 @@ def main():
     assert pdf_path.exists() and pdf_path.stat().st_size > 1500
     win.show_dashboard(); app.processEvents()
 
-    # DTC must return actual data and detail.
     win.open_page(2); app.processEvents()
     assert win.dtc_table.rowCount() > 0
     assert win.dtc_detail.toPlainText().strip()
@@ -153,8 +150,6 @@ def main():
     assert "P0299" in win.dtc_table.item(0, 0).text().upper()
     win.show_dashboard(); app.processEvents()
 
-    # Coding / Adaptation / Service: verify real rows and detail, allowing the
-    # test to choose a generation that actually has data for each category.
     procedure_gids = {}
     for idx in (3, 4, 5):
         page = win._workspace_pages[idx]
@@ -167,25 +162,21 @@ def main():
         assert page.detail.toPlainText().strip()
         win.show_dashboard(); app.processEvents()
 
-    # Live Data must be populated from detailed local DTC records.
     win.open_page(6); app.processEvents()
     assert win.live_table.rowCount() > 0
     win.live_search.setText("EGR"); app.processEvents()
-    # Search may legitimately return zero for a specific token, but the page
-    # itself must work; clear it and require real rows again.
     win.live_search.clear(); app.processEvents()
     assert win.live_table.rowCount() > 0
     win.show_dashboard(); app.processEvents()
 
-    # Modules must populate for at least one mapped generation.
     module_gid = find_generation_with_modules(win, app)
     assert module_gid is not None
     win.selected_generation_id = module_gid
     win.open_page(7); app.processEvents()
     assert win.module_table.rowCount() > 0
+    assert "Auto-Scan" in win.module_table.toolTip()
     win.show_dashboard(); app.processEvents()
 
-    # Reports window must call the real PDF action using the loaded Auto-Scan.
     win.selected_generation_id = original_gid
     win.open_page(8); app.processEvents()
     report_page = win._workspace_pages[8]
@@ -194,7 +185,6 @@ def main():
     assert pdf_path.exists() and pdf_path.stat().st_size > 1500
     win.show_dashboard(); app.processEvents()
 
-    # Back button must actually return to dashboard.
     win.selected_generation_id = original_gid
     win.open_page(2); app.processEvents()
     back = next(b for b in win._workspace_windows[2].findChildren(QPushButton) if b.objectName() == "backButton")
