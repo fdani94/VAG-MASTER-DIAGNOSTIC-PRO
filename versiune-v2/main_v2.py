@@ -98,5 +98,7 @@ if __name__ == "__main__":
     prepare_database()
     from v2_diagnostic_patch import apply as apply_v2_diagnostic_patch
     apply_v2_diagnostic_patch()
+    from v2_ui_runtime_patch import apply as apply_v2_ui_runtime_patch
+    apply_v2_ui_runtime_patch()
     from ui_v2 import run
     run()
