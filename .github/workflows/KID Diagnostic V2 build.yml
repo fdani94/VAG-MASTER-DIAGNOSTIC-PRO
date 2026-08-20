@@ -59,11 +59,11 @@ jobs:
 
       - name: Validate V2 source
         run: |
-          python -m py_compile versiune-v2/main_v2.py versiune-v2/ui_v2.py versiune-v2/dtc_reference_index_pack.py versiune-v2/v2_diagnostic_patch.py versiune-v2/v2_ui_runtime_patch.py autoscan_parser.py ui_autoscan_pdf_export.py
+          python -m py_compile versiune-v2/main_v2.py versiune-v2/ui_v2.py versiune-v2/dtc_reference_index_pack.py versiune-v2/v2_diagnostic_patch.py versiune-v2/v2_ui_runtime_patch.py versiune-v2/v2_master_ui_patch.py autoscan_parser.py ui_autoscan_pdf_export.py
 
       - name: Build V2 executable
         run: |
-          pyinstaller --noconfirm --clean --onefile --windowed --name KID-Diagnostic-V2 --icon kid_diagnostic_v2.ico --paths . --paths versiune-v2 --hidden-import ui_v2 --hidden-import dtc_reference_index_pack --hidden-import v2_diagnostic_patch --hidden-import v2_ui_runtime_patch --collect-all pypdf versiune-v2/main_v2.py
+          pyinstaller --noconfirm --clean --onefile --windowed --name KID-Diagnostic-V2 --icon kid_diagnostic_v2.ico --paths . --paths versiune-v2 --hidden-import ui_v2 --hidden-import dtc_reference_index_pack --hidden-import v2_diagnostic_patch --hidden-import v2_ui_runtime_patch --hidden-import v2_master_ui_patch --collect-all pypdf versiune-v2/main_v2.py
 
       - name: Verify executable
         shell: powershell
