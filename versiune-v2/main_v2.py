@@ -2,8 +2,10 @@ from pathlib import Path
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+V2_DIR = Path(__file__).resolve().parent
+for path in (ROOT, V2_DIR):
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
 
 import appdb
 from supermaster_expansion import install as install_supermaster
@@ -39,6 +41,7 @@ from autoscan_verified_dtc_pack_3 import install as install_autoscan_verified_dt
 from autoscan_bcu_dtc_pack import install as install_autoscan_bcu_dtc
 from autoscan_can_gateway_master import install as install_autoscan_can_gateway_master
 from autoscan_audi_b8_common_pack import install as install_autoscan_audi_b8_common
+from dtc_reference_index_pack import install as install_v2_dtc_reference_index
 
 if not hasattr(appdb, "src_diag"):
     appdb.src_diag = None
@@ -83,6 +86,10 @@ def prepare_database():
         install_autoscan_can_gateway_master(con)
         install_autoscan_audi_b8_common(con)
         install_coverage_gap_filler(con)
+
+        # V2: tens of thousands of locally searchable VAG numeric DTC slots.
+        # Detailed/verified rows installed above are never replaced by index-only rows.
+        install_v2_dtc_reference_index(con)
     finally:
         con.close()
 
