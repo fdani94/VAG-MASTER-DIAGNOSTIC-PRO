@@ -100,5 +100,7 @@ if __name__ == "__main__":
     apply_v2_diagnostic_patch()
     from v2_ui_runtime_patch import apply as apply_v2_ui_runtime_patch
     apply_v2_ui_runtime_patch()
+    from v2_master_ui_patch import apply as apply_v2_master_ui_patch
+    apply_v2_master_ui_patch()
     from ui_v2 import run
     run()
