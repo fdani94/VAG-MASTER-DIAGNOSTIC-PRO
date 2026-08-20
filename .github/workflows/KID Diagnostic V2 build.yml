@@ -84,8 +84,7 @@ jobs:
           @'
           import sys
           from pathlib import Path
-          root = Path.cwd()
-          v2 = root / 'versiune-v2'
+          root = Path.cwd(); v2 = root / 'versiune-v2'
           sys.path.insert(0, str(root)); sys.path.insert(0, str(v2))
           import main_v2
           main_v2.prepare_database()
@@ -98,15 +97,22 @@ jobs:
           from PySide6.QtWidgets import QApplication
           from ui_v2 import MainWindowV2
           app = QApplication([])
-          win = MainWindowV2()
-          win.show()
-          app.processEvents()
+          win = MainWindowV2(); win.resize(1540, 920); win.show(); app.processEvents()
           assert win.stack.count() == 9
           assert win.width() >= 1180
-          print('V2 UI smoke test OK:', win.windowTitle(), 'pages=', win.stack.count())
+          shot = win.grab(); assert shot.save('v2_ui_preview.png', 'PNG')
+          print('V2 UI smoke test OK:', win.windowTitle(), 'pages=', win.stack.count(), 'preview=', shot.size())
           win.close(); app.quit()
           '@ | Set-Content smoke_v2_ui.py
           python smoke_v2_ui.py
+
+      - name: Upload V2 UI preview
+        if: steps.smoke.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: KID-Diagnostic-V2-UI-Preview
+          path: v2_ui_preview.png
+          if-no-files-found: error
 
       - name: Build V2 executable
         id: build
@@ -150,12 +156,9 @@ jobs:
           import os
           from pathlib import Path
           from datetime import datetime, timezone
-          validate=os.environ.get('VALIDATE_RESULT','unknown')
-          smoke=os.environ.get('SMOKE_RESULT','unknown')
-          build=os.environ.get('BUILD_RESULT','unknown')
-          verify=os.environ.get('VERIFY_RESULT','unknown')
-          ok=validate==smoke==build==verify=='success'
-          status='SUCCESS' if ok else 'FAILED'
+          validate=os.environ.get('VALIDATE_RESULT','unknown'); smoke=os.environ.get('SMOKE_RESULT','unknown')
+          build=os.environ.get('BUILD_RESULT','unknown'); verify=os.environ.get('VERIFY_RESULT','unknown')
+          ok=validate==smoke==build==verify=='success'; status='SUCCESS' if ok else 'FAILED'
           exe=Path('dist/KID-Diagnostic-V2.exe'); size=exe.stat().st_size if exe.exists() else 0
           repo=os.environ.get('REPOSITORY','fdani94/VAG-MASTER-DIAGNOSTIC-PRO'); run_id=os.environ.get('RUN_ID','')
           run_url=f'https://github.com/{repo}/actions/runs/{run_id}' if run_id else ''
