@@ -1,0 +1,26 @@
+VCDS
+Windows Based VAG/VAS Emulator
+Self-Diagnosis Log
+
+VIN: WVWZZZAUZHW123456   License Plate: V2 DEMO
+Mileage: 164250km-102060mi
+Chassis Type: 5G0-VW37
+
+01-Engine -- Status: Malfunction 0010
+03-ABS Brakes -- Status: OK 0000
+08-Auto HVAC -- Status: OK 0000
+09-Cent. Elect. -- Status: OK 0000
+15-Airbags -- Status: OK 0000
+17-Instruments -- Status: OK 0000
+19-CAN Gateway -- Status: Malfunction 0010
+5F-Information Electr. -- Status: OK 0000
+
+-------------------------------------------------------------------------------
+Address 01: Engine
+1 Fault Found:
+P0401 00 - Exhaust Gas Recirculation Flow Insufficient
+
+-------------------------------------------------------------------------------
+Address 19: CAN Gateway
+1 Fault Found:
+U1121 00 - Databus Missing Message

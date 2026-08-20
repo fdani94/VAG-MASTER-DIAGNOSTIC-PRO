@@ -1,0 +1,66 @@
+name: Build VAG MASTER V2 Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/versiune-v2
+    paths:
+      - "versiune-v2/**"
+      - ".github/workflows/build-v2-windows.yml"
+
+jobs:
+  build-v2:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: versiune-v2
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller pillow
+
+      - name: Validate source and tests
+        run: |
+          python -m compileall -q .
+          python -m unittest discover -s tests -v
+
+      - name: Create Windows icon
+        run: python scripts/create_icon.py
+
+      - name: Build Windows application
+        run: >-
+          pyinstaller --noconfirm --clean --windowed --onedir
+          --name KID-VAG-MASTER-V2
+          --icon assets/kid_vag_v2.ico
+          --add-data "assets;assets"
+          --collect-all PySide6
+          --collect-all reportlab
+          main.py
+
+      - name: Verify executable
+        shell: powershell
+        run: |
+          if (-not (Test-Path "dist\KID-VAG-MASTER-V2\KID-VAG-MASTER-V2.exe")) { exit 1 }
+          Get-ChildItem -Recurse dist\KID-VAG-MASTER-V2
+
+      - name: Package Windows build
+        shell: powershell
+        run: Compress-Archive -Path dist\KID-VAG-MASTER-V2\* -DestinationPath KID-VAG-MASTER-V2-Windows.zip
+
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: KID-VAG-MASTER-V2-Windows
+          path: versiune-v2/KID-VAG-MASTER-V2-Windows.zip
+          if-no-files-found: error

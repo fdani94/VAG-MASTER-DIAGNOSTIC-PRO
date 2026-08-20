@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.spec
+build/
+dist/
+reports/
+assets/kid_vag_v2.ico
