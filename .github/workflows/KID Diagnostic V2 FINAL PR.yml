@@ -61,7 +61,7 @@ jobs:
 
       - name: Compile source
         run: |
-          python -m py_compile versiune-v2/main_v2.py versiune-v2/ui_v2.py versiune-v2/final_validation.py versiune-v2/v2_diagnostic_patch.py versiune-v2/v2_ui_runtime_patch.py versiune-v2/v2_master_ui_patch.py versiune-v2/v2_visual_fix.py versiune-v2/v2_redesign_patch.py versiune-v2/v2_responsive_windows_patch.py versiune-v2/v2_functional_windows_patch.py autoscan_parser.py ui_autoscan_pdf_export.py
+          python -m py_compile versiune-v2/main_v2.py versiune-v2/ui_v2.py versiune-v2/final_validation.py versiune-v2/v2_diagnostic_patch.py versiune-v2/v2_ui_runtime_patch.py versiune-v2/v2_master_ui_patch.py versiune-v2/v2_visual_fix.py versiune-v2/v2_redesign_patch.py versiune-v2/v2_responsive_windows_patch.py versiune-v2/v2_functional_windows_patch.py versiune-v2/v2_pdf_report.py versiune-v2/v2_pdf_fix_patch.py autoscan_parser.py ui_autoscan_pdf_export.py
 
       - name: Functional UI and actions
         env:
@@ -70,7 +70,7 @@ jobs:
 
       - name: Build final EXE
         run: |
-          pyinstaller --noconfirm --clean --onefile --windowed --name KID-Diagnostic-V2-FINAL --icon kid_diagnostic_v2.ico --paths . --paths versiune-v2 --hidden-import ui_v2 --hidden-import dtc_reference_index_pack --hidden-import obd_reference_index_pack --hidden-import v2_diagnostic_patch --hidden-import v2_ui_runtime_patch --hidden-import v2_master_ui_patch --hidden-import v2_visual_fix --hidden-import v2_redesign_patch --hidden-import v2_responsive_windows_patch --hidden-import v2_functional_windows_patch --collect-all pypdf versiune-v2/main_v2.py
+          pyinstaller --noconfirm --clean --onefile --windowed --name KID-Diagnostic-V2-FINAL --icon kid_diagnostic_v2.ico --paths . --paths versiune-v2 --hidden-import ui_v2 --hidden-import dtc_reference_index_pack --hidden-import obd_reference_index_pack --hidden-import v2_diagnostic_patch --hidden-import v2_ui_runtime_patch --hidden-import v2_master_ui_patch --hidden-import v2_visual_fix --hidden-import v2_redesign_patch --hidden-import v2_responsive_windows_patch --hidden-import v2_functional_windows_patch --hidden-import v2_pdf_fix_patch --hidden-import v2_pdf_report --collect-all pypdf --collect-all reportlab versiune-v2/main_v2.py
 
       - name: Verify final EXE
         shell: powershell
