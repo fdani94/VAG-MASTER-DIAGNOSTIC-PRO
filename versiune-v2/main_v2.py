@@ -112,5 +112,7 @@ if __name__ == "__main__":
     apply_v2_functional_windows_patch()
     from v2_pdf_fix_patch import apply as apply_v2_pdf_fix_patch
     apply_v2_pdf_fix_patch()
+    from v2_integrated_navigation_patch import apply as apply_v2_integrated_navigation_patch
+    apply_v2_integrated_navigation_patch()
     from ui_v2 import run
     run()
