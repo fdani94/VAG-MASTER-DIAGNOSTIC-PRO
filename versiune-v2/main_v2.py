@@ -87,32 +87,32 @@ def prepare_database():
         install_autoscan_can_gateway_master(con)
         install_autoscan_audi_b8_common(con)
         install_coverage_gap_filler(con)
-
         install_v2_dtc_reference_index(con)
         install_v2_obd_reference_index(con)
     finally:
         con.close()
 
 
+def apply_v2_patches():
+    from v2_diagnostic_patch import apply as p1
+    from v2_ui_runtime_patch import apply as p2
+    from v2_master_ui_patch import apply as p3
+    from v2_visual_fix import apply as p4
+    from v2_redesign_patch import apply as p5
+    from v2_responsive_windows_patch import apply as p6
+    from v2_functional_windows_patch import apply as p7
+    from v2_pdf_fix_patch import apply as p8
+    from v2_integrated_navigation_patch import apply as p9
+    p1(); p2(); p3(); p4(); p5(); p6(); p7(); p8(); p9()
+
+
 if __name__ == "__main__":
     prepare_database()
-    from v2_diagnostic_patch import apply as apply_v2_diagnostic_patch
-    apply_v2_diagnostic_patch()
-    from v2_ui_runtime_patch import apply as apply_v2_ui_runtime_patch
-    apply_v2_ui_runtime_patch()
-    from v2_master_ui_patch import apply as apply_v2_master_ui_patch
-    apply_v2_master_ui_patch()
-    from v2_visual_fix import apply as apply_v2_visual_fix
-    apply_v2_visual_fix()
-    from v2_redesign_patch import apply as apply_v2_redesign_patch
-    apply_v2_redesign_patch()
-    from v2_responsive_windows_patch import apply as apply_v2_responsive_windows_patch
-    apply_v2_responsive_windows_patch()
-    from v2_functional_windows_patch import apply as apply_v2_functional_windows_patch
-    apply_v2_functional_windows_patch()
-    from v2_pdf_fix_patch import apply as apply_v2_pdf_fix_patch
-    apply_v2_pdf_fix_patch()
-    from v2_integrated_navigation_patch import apply as apply_v2_integrated_navigation_patch
-    apply_v2_integrated_navigation_patch()
+    apply_v2_patches()
+
+    if "--compiled-smoke" in sys.argv:
+        from v2_compiled_smoke import run_compiled_smoke
+        raise SystemExit(run_compiled_smoke())
+
     from ui_v2 import run
     run()
