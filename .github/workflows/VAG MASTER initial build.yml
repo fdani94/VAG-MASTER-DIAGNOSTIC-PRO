@@ -2,13 +2,10 @@ name: Build Windows EXE
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: [self-hosted, Windows, X64]
 
     steps:
       - name: Checkout
