@@ -16,7 +16,7 @@ from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QMessageBox, QPushButton
 
 
-NAVIGATION_VERSION = "3.0-integrated-stack"
+NAVIGATION_VERSION = "3.1-integrated-stack-back"
 
 
 def apply():
@@ -31,9 +31,6 @@ def apply():
     def __init__(self, *args, **kwargs):
         previous_init(self, *args, **kwargs)
 
-        # The responsive/windows patch saved the original pages in this map and
-        # removed them from the stack. Put the *same widgets* back in the main
-        # stack instead of reparenting them into top-level windows.
         pages = dict(getattr(self, "_workspace_pages", {}) or {})
         self._integrated_stack_indices = {}
         for feature_index in range(1, 9):
@@ -45,7 +42,6 @@ def apply():
                 existing = self.stack.addWidget(page)
             self._integrated_stack_indices[feature_index] = existing
 
-        # Secondary workspace windows are intentionally disabled in FINAL.
         for win in list(getattr(self, "_workspace_windows", {}).values()):
             try:
                 win.hide()
@@ -55,9 +51,10 @@ def apply():
         self._active_workspace_index = 0
         self.stack.setCurrentIndex(0)
 
-        # Make the navigation intent explicit in every diagnostic page.
+        # The original UI used both one and two spaces after the arrow in
+        # different revisions. Match by meaning rather than exact whitespace.
         for button in self.findChildren(QPushButton):
-            if button.text().strip() in {"← Dashboard", "Dashboard"}:
+            if "Dashboard" in button.text():
                 button.setText("← Înapoi la Dashboard")
                 button.setObjectName("backButton")
 
@@ -99,7 +96,6 @@ def apply():
             stack_index = self.stack.indexOf(page)
             self._integrated_stack_indices[index] = stack_index
 
-        # Refresh the real data before showing the workspace.
         if index == 2:
             self._load_dtcs()
         elif index in (3, 4, 5):
