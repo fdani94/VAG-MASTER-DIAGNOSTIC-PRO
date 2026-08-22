@@ -1,0 +1,119 @@
+name: KID Diagnostic V2 FINAL PR Validation
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    branches:
+      - main
+    paths:
+      - "versiune-v2/**"
+      - "*.py"
+      - "requirements.txt"
+      - ".github/workflows/KID Diagnostic V2 FINAL PR.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  final-pr-v2:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller==6.21.0 pillow
+
+      - name: Create icon
+        shell: powershell
+        run: |
+          @'
+          from PIL import Image, ImageDraw, ImageFont
+          S=512
+          im=Image.new('RGBA',(S,S),(235,244,250,255))
+          d=ImageDraw.Draw(im)
+          d.rounded_rectangle((18,18,S-18,S-18), radius=105, fill=(255,255,255,255), outline=(66,151,217,255), width=18)
+          d.rounded_rectangle((105,150,407,255), radius=45, outline=(45,148,220,255), width=12)
+          d.line((150,150,205,105,310,105,362,150), fill=(71,116,150,255), width=12)
+          d.ellipse((125,225,185,285), fill=(242,248,252,255), outline=(40,142,215,255), width=8)
+          d.ellipse((327,225,387,285), fill=(242,248,252,255), outline=(40,142,215,255), width=8)
+          try:
+              f1=ImageFont.truetype('C:/Windows/Fonts/arialbd.ttf',105)
+              f2=ImageFont.truetype('C:/Windows/Fonts/arialbd.ttf',42)
+          except Exception:
+              f1=f2=None
+          box=d.textbbox((0,0),'KID',font=f1)
+          d.text(((S-(box[2]-box[0]))//2,278),'KID',font=f1,fill=(28,63,91,255),stroke_width=2,stroke_fill=(94,171,224,255))
+          box=d.textbbox((0,0),'DIAGNOSTIC',font=f2)
+          d.text(((S-(box[2]-box[0]))//2,385),'DIAGNOSTIC',font=f2,fill=(42,137,203,255))
+          im.save('kid_diagnostic_v2.ico', sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])
+          '@ | Set-Content make_final_pr_icon.py
+          python make_final_pr_icon.py
+
+      - name: Compile source
+        run: |
+          python -m py_compile versiune-v2/main_v2.py versiune-v2/ui_v2.py versiune-v2/final_validation.py versiune-v2/v2_compiled_smoke.py versiune-v2/v2_integrated_navigation_patch.py versiune-v2/v2_diagnostic_patch.py versiune-v2/v2_ui_runtime_patch.py versiune-v2/v2_master_ui_patch.py versiune-v2/v2_visual_fix.py versiune-v2/v2_redesign_patch.py versiune-v2/v2_responsive_windows_patch.py versiune-v2/v2_functional_windows_patch.py versiune-v2/v2_pdf_report.py versiune-v2/v2_pdf_fix_patch.py autoscan_parser.py ui_autoscan_pdf_export.py
+
+      - name: Functional UI and integrated navigation
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python versiune-v2/final_validation.py
+
+      - name: Build final EXE
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed --name KID-Diagnostic-V2-FINAL --icon kid_diagnostic_v2.ico --paths . --paths versiune-v2 --hidden-import ui_v2 --hidden-import dtc_reference_index_pack --hidden-import obd_reference_index_pack --hidden-import v2_diagnostic_patch --hidden-import v2_ui_runtime_patch --hidden-import v2_master_ui_patch --hidden-import v2_visual_fix --hidden-import v2_redesign_patch --hidden-import v2_responsive_windows_patch --hidden-import v2_functional_windows_patch --hidden-import v2_pdf_fix_patch --hidden-import v2_pdf_report --hidden-import v2_integrated_navigation_patch --hidden-import v2_compiled_smoke --collect-all pypdf --collect-all reportlab versiune-v2/main_v2.py
+
+      - name: Verify final EXE
+        shell: powershell
+        run: |
+          if (-not (Test-Path "dist\KID-Diagnostic-V2-FINAL.exe")) { exit 1 }
+          $file = Get-Item "dist\KID-Diagnostic-V2-FINAL.exe"
+          if ($file.Length -lt 10000000) { exit 1 }
+          Write-Host "SIZE: $($file.Length) bytes"
+          Get-FileHash "dist\KID-Diagnostic-V2-FINAL.exe" -Algorithm SHA256
+
+      - name: Compiled EXE integrated navigation smoke
+        shell: powershell
+        run: |
+          $env:QT_QPA_PLATFORM = "offscreen"
+          & "dist\KID-Diagnostic-V2-FINAL.exe" --compiled-smoke
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host "Packaged EXE integrated navigation OK"
+
+      - name: Start packaged EXE normally
+        shell: powershell
+        run: |
+          $env:QT_QPA_PLATFORM = "offscreen"
+          $p = Start-Process -FilePath "dist\KID-Diagnostic-V2-FINAL.exe" -PassThru
+          Start-Sleep -Seconds 20
+          if ($p.HasExited) {
+            Write-Host "EXE exited early with code $($p.ExitCode)"
+            exit 1
+          }
+          Stop-Process -Id $p.Id -Force
+          Write-Host "Packaged EXE normal startup OK"
+
+      - name: Upload final Windows EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: KID-Diagnostic-V2-FINAL-Windows
+          path: dist/KID-Diagnostic-V2-FINAL.exe
+          if-no-files-found: error
+
+      - name: Upload validation evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: KID-Diagnostic-V2-FINAL-Validation
+          path: |
+            v2_final_*.png
+            KID_Diagnostic_FINAL_TEST.pdf
+          if-no-files-found: error

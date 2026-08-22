@@ -1,0 +1,174 @@
+name: Build KID Diagnostic V2 FINAL
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/v2-final-validation
+    paths:
+      - "versiune-v2/**"
+      - "*.py"
+      - "requirements.txt"
+      - ".github/workflows/KID Diagnostic V2 FINAL validation.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  final-v2:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller==6.21.0 pillow
+
+      - name: Create KID Diagnostic icon
+        shell: powershell
+        run: |
+          @'
+          from PIL import Image, ImageDraw, ImageFont
+          S=512
+          im=Image.new('RGBA',(S,S),(235,244,250,255))
+          d=ImageDraw.Draw(im)
+          d.rounded_rectangle((18,18,S-18,S-18), radius=105, fill=(255,255,255,255), outline=(66,151,217,255), width=18)
+          d.rounded_rectangle((105,150,407,255), radius=45, outline=(45,148,220,255), width=12)
+          d.line((150,150,205,105,310,105,362,150), fill=(71,116,150,255), width=12)
+          d.ellipse((125,225,185,285), fill=(242,248,252,255), outline=(40,142,215,255), width=8)
+          d.ellipse((327,225,387,285), fill=(242,248,252,255), outline=(40,142,215,255), width=8)
+          try:
+              f1=ImageFont.truetype('C:/Windows/Fonts/arialbd.ttf',105)
+              f2=ImageFont.truetype('C:/Windows/Fonts/arialbd.ttf',42)
+          except Exception:
+              f1=f2=None
+          box=d.textbbox((0,0),'KID',font=f1)
+          d.text(((S-(box[2]-box[0]))//2,278),'KID',font=f1,fill=(28,63,91,255),stroke_width=2,stroke_fill=(94,171,224,255))
+          box=d.textbbox((0,0),'DIAGNOSTIC',font=f2)
+          d.text(((S-(box[2]-box[0]))//2,385),'DIAGNOSTIC',font=f2,fill=(42,137,203,255))
+          im.save('kid_diagnostic_v2.ico', sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])
+          '@ | Set-Content make_final_icon.py
+          python make_final_icon.py
+
+      - name: Validate final source
+        id: validate
+        continue-on-error: true
+        run: |
+          python -m py_compile versiune-v2/main_v2.py versiune-v2/ui_v2.py versiune-v2/final_validation.py versiune-v2/v2_diagnostic_patch.py versiune-v2/v2_ui_runtime_patch.py versiune-v2/v2_master_ui_patch.py versiune-v2/v2_visual_fix.py versiune-v2/v2_redesign_patch.py versiune-v2/v2_responsive_windows_patch.py versiune-v2/v2_functional_windows_patch.py autoscan_parser.py ui_autoscan_pdf_export.py
+
+      - name: Run final functional validation
+        id: functional
+        continue-on-error: true
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python versiune-v2/final_validation.py
+
+      - name: Build final Windows executable
+        id: build
+        continue-on-error: true
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed --name KID-Diagnostic-V2-FINAL --icon kid_diagnostic_v2.ico --paths . --paths versiune-v2 --hidden-import ui_v2 --hidden-import dtc_reference_index_pack --hidden-import obd_reference_index_pack --hidden-import v2_diagnostic_patch --hidden-import v2_ui_runtime_patch --hidden-import v2_master_ui_patch --hidden-import v2_visual_fix --hidden-import v2_redesign_patch --hidden-import v2_responsive_windows_patch --hidden-import v2_functional_windows_patch --collect-all pypdf versiune-v2/main_v2.py
+
+      - name: Verify final executable
+        id: verify
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
+        shell: powershell
+        run: |
+          if (-not (Test-Path "dist\KID-Diagnostic-V2-FINAL.exe")) { exit 1 }
+          $file = Get-Item "dist\KID-Diagnostic-V2-FINAL.exe"
+          if ($file.Length -lt 10000000) { exit 1 }
+          Write-Host "EXE: $($file.FullName)"
+          Write-Host "SIZE: $($file.Length) bytes"
+          Get-FileHash "dist\KID-Diagnostic-V2-FINAL.exe" -Algorithm SHA256
+
+      - name: Verify packaged EXE starts
+        id: exestart
+        if: steps.verify.outcome == 'success'
+        continue-on-error: true
+        shell: powershell
+        run: |
+          $env:QT_QPA_PLATFORM = "offscreen"
+          $p = Start-Process -FilePath "dist\KID-Diagnostic-V2-FINAL.exe" -PassThru
+          Start-Sleep -Seconds 25
+          if ($p.HasExited) {
+            Write-Host "Packaged EXE exited early with code $($p.ExitCode)"
+            exit 1
+          }
+          Stop-Process -Id $p.Id -Force
+          Write-Host "Packaged EXE remained alive after startup validation."
+
+      - name: Upload final executable
+        if: steps.validate.outcome == 'success' && steps.functional.outcome == 'success' && steps.verify.outcome == 'success' && steps.exestart.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: KID-Diagnostic-V2-FINAL-Windows
+          path: dist/KID-Diagnostic-V2-FINAL.exe
+          if-no-files-found: error
+
+      - name: Upload final validation evidence
+        if: steps.functional.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: KID-Diagnostic-V2-FINAL-Validation
+          path: |
+            v2_final_*.png
+            KID_Diagnostic_FINAL_TEST.pdf
+          if-no-files-found: error
+
+      - name: Publish final validation status
+        if: always()
+        shell: powershell
+        env:
+          VALIDATE_RESULT: ${{ steps.validate.outcome }}
+          FUNCTIONAL_RESULT: ${{ steps.functional.outcome }}
+          BUILD_RESULT: ${{ steps.build.outcome }}
+          VERIFY_RESULT: ${{ steps.verify.outcome }}
+          EXESTART_RESULT: ${{ steps.exestart.outcome }}
+          SOURCE_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          @'
+          import os
+          from pathlib import Path
+          from datetime import datetime, timezone
+          vals = {
+              'validate': os.environ.get('VALIDATE_RESULT','unknown'),
+              'functional': os.environ.get('FUNCTIONAL_RESULT','unknown'),
+              'build': os.environ.get('BUILD_RESULT','unknown'),
+              'verify': os.environ.get('VERIFY_RESULT','unknown'),
+              'exestart': os.environ.get('EXESTART_RESULT','unknown'),
+          }
+          ok = all(v == 'success' for v in vals.values())
+          status = 'SUCCESS' if ok else 'FAILED'
+          exe = Path('dist/KID-Diagnostic-V2-FINAL.exe')
+          size = exe.stat().st_size if exe.exists() else 0
+          run_id = os.environ.get('RUN_ID','')
+          repo = os.environ.get('REPOSITORY','fdani94/VAG-MASTER-DIAGNOSTIC-PRO')
+          text = f'''# KID Diagnostic V2 — FINAL Validation\n\n**Status:** {status}\n\n- Source commit: `{os.environ.get("SOURCE_SHA","")}`\n- Compile source: **{vals["validate"]}**\n- Functional UI/actions: **{vals["functional"]}**\n- PyInstaller build: **{vals["build"]}**\n- Verify EXE: **{vals["verify"]}**\n- Start packaged EXE: **{vals["exestart"]}**\n- EXE size: **{size} bytes**\n- Artifact: `KID-Diagnostic-V2-FINAL-Windows` when SUCCESS\n- Validation evidence: `KID-Diagnostic-V2-FINAL-Validation` when functional test succeeds\n- Workflow run: https://github.com/{repo}/actions/runs/{run_id}\n- Updated UTC: {datetime.now(timezone.utc).isoformat(timespec="seconds")}\n'''
+          Path('versiune-v2/FINAL_BUILD_STATUS.md').write_text(text, encoding='utf-8')
+          '@ | Set-Content write_final_status.py
+          python write_final_status.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- "versiune-v2/FINAL_BUILD_STATUS.md"
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) {
+            git commit -m "Update final V2 validation status [skip ci]"
+            git push
+          }
+
+      - name: Fail final workflow when validation failed
+        if: always() && (steps.validate.outcome != 'success' || steps.functional.outcome != 'success' || steps.build.outcome != 'success' || steps.verify.outcome != 'success' || steps.exestart.outcome != 'success')
+        shell: powershell
+        run: exit 1
