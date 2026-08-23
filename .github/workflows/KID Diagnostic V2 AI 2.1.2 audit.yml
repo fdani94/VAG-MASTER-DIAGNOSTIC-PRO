@@ -47,7 +47,7 @@ jobs:
             versiune-v2/v2_integrated_navigation_patch.py versiune-v2/v2_pdf_report.py `
             versiune-v2/v2_ai_copilot.py versiune-v2/v2_ai_parser_bridge.py `
             versiune-v2/v2_ai_ui_patch.py versiune-v2/v2_ai_pdf_patch.py `
-            versiune-v2/v2_ai_hardening_patch.py `
+            versiune-v2/v2_ai_hardening_patch.py versiune-v2/v2_ai_shutdown_patch.py `
             versiune-v2/test_v2_ai_copilot.py versiune-v2/test_v2_runtime_db.py `
             versiune-v2/test_v2_ai_hardening.py `
             versiune-v2/v2_ai_functional_validation.py `
@@ -135,6 +135,7 @@ jobs:
             --hidden-import v2_ai_ui_patch `
             --hidden-import v2_ai_pdf_patch `
             --hidden-import v2_ai_hardening_patch `
+            --hidden-import v2_ai_shutdown_patch `
             --collect-all pypdf `
             --collect-all reportlab `
             versiune-v2/main_v2.py
@@ -155,11 +156,14 @@ jobs:
             "v2_ai_ui_patch",
             "v2_ai_pdf_patch",
             "v2_ai_hardening_patch",
+            "v2_ai_shutdown_patch",
             "v2_integrated_navigation_patch",
             "v2_functional_windows_patch"
           )
           foreach ($module in $critical) {
-            if (Select-String -Path $warn -Pattern "missing module named ['\"]?$module" -Quiet) {
+            $escaped = [regex]::Escape($module)
+            $pattern = "missing module named.*$escaped"
+            if (Select-String -Path $warn -Pattern $pattern -Quiet) {
               throw "PyInstaller raportează modul critic lipsă: $module"
             }
           }
