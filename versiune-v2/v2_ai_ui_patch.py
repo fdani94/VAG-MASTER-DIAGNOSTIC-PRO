@@ -226,6 +226,7 @@ def _ai_strip(owner, index: int) -> QFrame:
     label, description, _prompt = PAGE_AI.get(index, PAGE_AI[0])
     frame = QFrame()
     frame.setObjectName(f"kidAiStrip{index}")
+    frame.setMinimumHeight(54)
     frame.setStyleSheet(
         "QFrame{background:#082236;border:1px solid #1e8ac0;border-radius:10px;}"
         "QLabel{background:transparent;border:none;}"
@@ -254,19 +255,28 @@ def _ai_strip(owner, index: int) -> QFrame:
 
 
 def _install_ai_strips(owner):
-    stack = getattr(owner, "stack", None)
-    if stack is None:
-        return
-    for index in range(stack.count()):
-        page = stack.widget(index)
-        layout = page.layout() if page is not None else None
-        if layout is None or page.findChild(QFrame, f"kidAiStrip{index}") is not None:
+    """Attach AI controls to the final responsive dashboard and workspace pages."""
+    targets = {0: getattr(owner, "_responsive_dashboard", None)}
+    targets.update(dict(getattr(owner, "_workspace_pages", {}) or {}))
+    owner.v2_ai_strips = {}
+
+    for index in range(9):
+        page = targets.get(index)
+        if page is None:
+            continue
+        layout = page.layout()
+        if layout is None:
+            continue
+        existing = page.findChild(QFrame, f"kidAiStrip{index}")
+        if existing is not None:
+            owner.v2_ai_strips[index] = existing
             continue
         strip = _ai_strip(owner, index)
         if hasattr(layout, "insertWidget"):
             layout.insertWidget(1, strip)
         else:
             layout.addWidget(strip)
+        owner.v2_ai_strips[index] = strip
 
 
 def apply():
@@ -280,6 +290,8 @@ def apply():
 
     original_init = cls.__init__
     original_load_autoscan = cls._load_autoscan
+    original_open_page = cls.open_page
+    original_show_dashboard = cls.show_dashboard
 
     def __init__(self, *args, **kwargs):
         original_init(self, *args, **kwargs)
@@ -371,16 +383,28 @@ def apply():
 
     def ask_v2_ai_for_page(self, index=None):
         if index is None:
-            stack = getattr(self, "stack", None)
-            index = stack.currentIndex() if stack is not None else 0
+            index = int(getattr(self, "_active_workspace_index", 0) or 0)
         _label, _description, prompt = PAGE_AI.get(int(index), PAGE_AI[0])
         self.open_v2_ai_copilot()
         if self.v2_ai_dialog is not None:
             self.v2_ai_dialog.send(prompt)
+
+    def open_page(self, index):
+        original_open_page(self, index)
+        index = int(index)
+        if index in PAGE_AI and int(getattr(self, "_active_workspace_index", 0) or 0) == index:
+            label = PAGE_AI[index][0].replace("AI ", "")
+            self.setWindowTitle(f"KID Diagnostic V2 • {label} • AI Copilot v2.1.1")
+
+    def show_dashboard(self):
+        original_show_dashboard(self)
+        self.setWindowTitle("KID Diagnostic V2 • Dashboard • AI Copilot v2.1.1")
 
     cls.__init__ = __init__
     cls._load_autoscan = _load_autoscan
     cls.rebuild_v2_verified_report = rebuild_v2_verified_report
     cls.open_v2_ai_copilot = open_v2_ai_copilot
     cls.ask_v2_ai_for_page = ask_v2_ai_for_page
+    cls.open_page = open_page
+    cls.show_dashboard = show_dashboard
     cls._kid_v2_ai_copilot_applied = True
