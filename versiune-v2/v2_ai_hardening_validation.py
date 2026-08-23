@@ -14,20 +14,31 @@ import main_v2
 
 
 def choose_first_vehicle(win, app):
+    """Choose a complete V2.2.0 vehicle context, including a real engine."""
     for bi in range(1, win.brand_combo.count()):
         win.brand_combo.setCurrentIndex(bi)
         app.processEvents()
         for mi in range(1, win.model_combo.count()):
             win.model_combo.setCurrentIndex(mi)
             app.processEvents()
-            if win.gen_combo.count() > 1:
-                win.gen_combo.setCurrentIndex(1)
-                app.processEvents()
-                if win.year_combo.count():
-                    win.year_combo.setCurrentIndex(0)
-                win._select_vehicle()
-                app.processEvents()
-                return win.selected_generation_id is not None
+            if win.gen_combo.count() <= 1:
+                continue
+            win.gen_combo.setCurrentIndex(1)
+            app.processEvents()
+            if win.year_combo.count():
+                win.year_combo.setCurrentIndex(0)
+            if win.engine_combo.count() <= 1:
+                continue
+            win.engine_combo.setCurrentIndex(1)  # 0 = Nespecificat
+            app.processEvents()
+            if win.engine_combo.currentData() is None:
+                continue
+            win._select_vehicle()
+            app.processEvents()
+            return (
+                win.selected_generation_id is not None
+                and getattr(win, "selected_engine_id", None) is not None
+            )
     return False
 
 
@@ -56,7 +67,8 @@ def main():
 
     from PySide6.QtWidgets import QApplication, QMessageBox, QFrame, QToolBar
     import ui_v2
-    from v2_ai_hardening_patch import active_page_context
+    from v2_ai_hardening_patch import HARDENING_VERSION, active_page_context
+    from v2_vehicle_first_patch import VEHICLE_FIRST_VERSION
 
     app = QApplication.instance() or QApplication([])
     QMessageBox.warning = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Ok)
@@ -68,7 +80,12 @@ def main():
     win.show()
     app.processEvents()
 
-    assert "2.1.2" in win.windowTitle(), win.windowTitle()
+    # Application shell is V2.2.0; the AI hardening component keeps its own
+    # 2.1.2 revision marker so safety regressions remain independently traceable.
+    assert VEHICLE_FIRST_VERSION == "2.2.0"
+    assert HARDENING_VERSION == "2.1.2"
+    assert "2.2.0" in win.windowTitle(), win.windowTitle()
+    assert "AI Copilot" in win.windowTitle(), win.windowTitle()
     assert getattr(win.__class__, "_kid_v2_ai_hardening_applied", False)
     assert getattr(win.__class__, "_kid_v2_ai_shutdown_applied", False)
     toolbar = win.findChild(QToolBar, "kidV2AiToolbar")
@@ -78,6 +95,9 @@ def main():
     assert win.grab().save(str(ROOT / "v2_ai_212_dashboard.png"), "PNG")
 
     assert choose_first_vehicle(win, app)
+    assert getattr(win, "selected_engine_id", None) is not None
+    assert len(getattr(win, "_vehicle_context_strips", {})) == 8
+
     win.open_page(2)
     app.processEvents()
     win.dtc_search.setText("P0299")
@@ -90,13 +110,14 @@ def main():
     assert "Funcție activă: Coduri DTC" in context
     assert "P0299" in context, context
     assert win._workspace_pages[2].findChild(QFrame, "kidAiStrip2") is not None
+    assert win._vehicle_context_strips[2]._kid_vehicle_state.text() == "SELECTAT"
     assert win.grab().save(str(ROOT / "v2_ai_212_dtc_context.png"), "PNG")
 
     win.open_v2_ai_copilot()
     app.processEvents()
     dialog = win.v2_ai_dialog
     assert dialog is not None and dialog.isVisible()
-    assert "2.1.2" in dialog.windowTitle()
+    assert HARDENING_VERSION in dialog.windowTitle()
 
     # Rich-text injection regression: user/model text must remain literal text.
     dialog._append("TU", "<b>NU TREBUIE INTERPRETAT</b> & <img src='x'>")
@@ -157,12 +178,15 @@ def main():
     )
 
     print(
-        "V2 AI 2.1.2 HARDENING AUDIT OK",
+        "V2 AI HARDENING AUDIT OK",
+        f"app_version={VEHICLE_FIRST_VERSION}",
+        f"ai_hardening={HARDENING_VERSION}",
         "html_escape=ok",
         "chat_thread_lifecycle=ok",
         "main_shutdown_lifecycle=ok",
         "context=P0299",
         f"ai_strips={len(win.v2_ai_strips)}",
+        f"vehicle_strips={len(win._vehicle_context_strips)}",
     )
 
     app.quit()
