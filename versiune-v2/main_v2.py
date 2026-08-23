@@ -8,6 +8,16 @@ for path in (ROOT, V2_DIR):
         sys.path.insert(0, str(path))
 
 import appdb
+from v2_runtime_db import (
+    configure_database_runtime,
+    database_init_guard,
+    expansion_is_current,
+    mark_expansion_current,
+)
+
+# V2 must never share the writable SQLite file with the legacy application.
+configure_database_runtime()
+
 from supermaster_expansion import install as install_supermaster
 from vag_1996_2024_pack import install as install_1996_2024
 from expert_data_pack import install as install_expert_data
@@ -49,48 +59,55 @@ if not hasattr(appdb, "src_diag"):
 
 
 def prepare_database():
-    con = appdb.connect_db()
-    try:
-        install_supermaster(con)
-        install_1996_2024(con)
-        install_catalog_complete(con)
-        install_vag_coverage_expansion(con)
-        install_all_platforms_models(con)
-        install_transmission_procedures(con)
-        install_engine_procedures(con)
-        install_brake_steering_procedures(con)
+    """Initialize the heavy V2 catalog only once per database revision."""
+    with database_init_guard():
+        con = appdb.connect_db()
+        try:
+            if expansion_is_current(con):
+                return
 
-        ensure_legacy_schema(con)
-        install_lighting_headlight_procedures(con)
-        install_hvac_procedures(con)
-        install_airbag_instruments_immobilizer(con)
-        install_comfort_gateway_multimedia(con)
-        migrate_legacy_procedures(con)
+            install_supermaster(con)
+            install_1996_2024(con)
+            install_catalog_complete(con)
+            install_vag_coverage_expansion(con)
+            install_all_platforms_models(con)
+            install_transmission_procedures(con)
+            install_engine_procedures(con)
+            install_brake_steering_procedures(con)
 
-        install_expert_data(con)
-        install_replacement_calibration(con)
-        install_service_powertrain(con)
-        install_coding_market(con)
-        install_community_coding(con)
-        install_vcds_workshop(con)
-        install_model_specific(con)
-        install_model_specific_2(con)
-        install_battery_visibility(con)
-        install_engine_battery_fix(con)
-        install_long_coding_master(con)
-        install_autoscan_dtc(con)
-        install_autoscan_dtc_expansion_2(con)
-        install_autoscan_chassis_dtc(con)
-        install_autoscan_mass_dtc(con)
-        install_autoscan_verified_dtc_3(con)
-        install_autoscan_bcu_dtc(con)
-        install_autoscan_can_gateway_master(con)
-        install_autoscan_audi_b8_common(con)
-        install_coverage_gap_filler(con)
-        install_v2_dtc_reference_index(con)
-        install_v2_obd_reference_index(con)
-    finally:
-        con.close()
+            ensure_legacy_schema(con)
+            install_lighting_headlight_procedures(con)
+            install_hvac_procedures(con)
+            install_airbag_instruments_immobilizer(con)
+            install_comfort_gateway_multimedia(con)
+            migrate_legacy_procedures(con)
+
+            install_expert_data(con)
+            install_replacement_calibration(con)
+            install_service_powertrain(con)
+            install_coding_market(con)
+            install_community_coding(con)
+            install_vcds_workshop(con)
+            install_model_specific(con)
+            install_model_specific_2(con)
+            install_battery_visibility(con)
+            install_engine_battery_fix(con)
+            install_long_coding_master(con)
+            install_autoscan_dtc(con)
+            install_autoscan_dtc_expansion_2(con)
+            install_autoscan_chassis_dtc(con)
+            install_autoscan_mass_dtc(con)
+            install_autoscan_verified_dtc_3(con)
+            install_autoscan_bcu_dtc(con)
+            install_autoscan_can_gateway_master(con)
+            install_autoscan_audi_b8_common(con)
+            install_coverage_gap_filler(con)
+            install_v2_dtc_reference_index(con)
+            install_v2_obd_reference_index(con)
+
+            mark_expansion_current(con)
+        finally:
+            con.close()
 
 
 def apply_v2_patches():
@@ -103,7 +120,10 @@ def apply_v2_patches():
     from v2_functional_windows_patch import apply as p7
     from v2_pdf_fix_patch import apply as p8
     from v2_integrated_navigation_patch import apply as p9
-    p1(); p2(); p3(); p4(); p5(); p6(); p7(); p8(); p9()
+    from v2_ai_parser_bridge import apply as p10
+    from v2_ai_ui_patch import apply as p11
+    from v2_ai_pdf_patch import apply as p12
+    p1(); p2(); p3(); p4(); p5(); p6(); p7(); p8(); p9(); p10(); p11(); p12()
 
 
 if __name__ == "__main__":
