@@ -71,7 +71,7 @@ class V2AiCopilotTests(unittest.TestCase):
         self.assertEqual(fault.vag_code, "5188")
         self.assertEqual(fault.uds_status_byte, "00")
         self.assertEqual(fault.uds_bracket, "175")
-        self.assertIn("Mil On", fault.status)
+        self.assertIn("MIL ON", fault.status.upper())
         self.assertTrue(scan.validation_ok)
 
     def test_module_identification_and_original_coding_are_preserved(self):
