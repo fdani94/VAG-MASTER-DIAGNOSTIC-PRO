@@ -38,6 +38,7 @@ jobs:
         run: |
           python -m py_compile autoscan_parser.py ui_autoscan_pdf_export.py `
             versiune-v2/main_v2.py versiune-v2/ui_v2.py versiune-v2/final_validation.py `
+            versiune-v2/v2_runtime_db.py `
             versiune-v2/v2_diagnostic_patch.py versiune-v2/v2_ui_runtime_patch.py `
             versiune-v2/v2_master_ui_patch.py versiune-v2/v2_visual_fix.py `
             versiune-v2/v2_redesign_patch.py versiune-v2/v2_responsive_windows_patch.py `
@@ -68,7 +69,7 @@ jobs:
           python versiune-v2/final_validation.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Run strict V2 AI functional validation
+      - name: Run V2 startup lock and AI visibility validation
         shell: powershell
         env:
           QT_QPA_PLATFORM: offscreen
@@ -113,6 +114,7 @@ jobs:
             --hidden-import ui_v2 `
             --hidden-import dtc_reference_index_pack `
             --hidden-import obd_reference_index_pack `
+            --hidden-import v2_runtime_db `
             --hidden-import v2_diagnostic_patch `
             --hidden-import v2_ui_runtime_patch `
             --hidden-import v2_master_ui_patch `
@@ -167,26 +169,26 @@ jobs:
         shell: powershell
         run: |
           $exe = Resolve-Path "dist\KID-Diagnostic-V2-AI.exe"
-          $setup = Resolve-Path "versiune-v2\dist-v2-installer\KID-Diagnostic-V2-AI-v2.1.0-Setup.exe"
+          $setup = Resolve-Path "versiune-v2\dist-v2-installer\KID-Diagnostic-V2-AI-v2.1.1-Setup.exe"
           if ((Get-Item $setup).Length -lt 10000000) { throw "Installer V2 AI pare invalid." }
           $exeHash = Get-FileHash $exe -Algorithm SHA256
           $setupHash = Get-FileHash $setup -Algorithm SHA256
           @(
             "$($exeHash.Hash)  KID-Diagnostic-V2-AI.exe",
-            "$($setupHash.Hash)  KID-Diagnostic-V2-AI-v2.1.0-Setup.exe"
-          ) | Set-Content -Encoding ASCII "SHA256SUMS-KID-V2-AI.txt"
-          Get-Content "SHA256SUMS-KID-V2-AI.txt"
+            "$($setupHash.Hash)  KID-Diagnostic-V2-AI-v2.1.1-Setup.exe"
+          ) | Set-Content -Encoding ASCII "SHA256SUMS-KID-V2-AI-v2.1.1.txt"
+          Get-Content "SHA256SUMS-KID-V2-AI-v2.1.1.txt"
 
       - name: Upload audited V2 package
         uses: actions/upload-artifact@v6
         with:
-          name: KID-DIAGNOSTIC-V2-AI-AUDIT
+          name: KID-DIAGNOSTIC-V2-AI-V2-1-1-AUDIT
           retention-days: 14
           if-no-files-found: error
           path: |
             dist/KID-Diagnostic-V2-AI.exe
-            versiune-v2/dist-v2-installer/KID-Diagnostic-V2-AI-v2.1.0-Setup.exe
-            SHA256SUMS-KID-V2-AI.txt
+            versiune-v2/dist-v2-installer/KID-Diagnostic-V2-AI-v2.1.1-Setup.exe
+            SHA256SUMS-KID-V2-AI-v2.1.1.txt
             v2_final_*.png
             KID_Diagnostic_FINAL_TEST.pdf
             KID_Diagnostic_V2_AI_TEST.pdf
