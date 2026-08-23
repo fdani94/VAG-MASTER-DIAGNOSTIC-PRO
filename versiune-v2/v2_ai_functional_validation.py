@@ -85,7 +85,7 @@ def main():
 
     assert hasattr(win, "v2_ai_copilot")
     assert "AI Copilot" in win.windowTitle()
-    assert "2.1.1" in win.windowTitle()
+    assert "2.1.2" in win.windowTitle()
     toolbar = win.findChild(QToolBar, "kidV2AiToolbar")
     assert toolbar is not None, "AI toolbar missing"
 
@@ -166,6 +166,7 @@ def main():
     win.open_v2_ai_copilot()
     app.processEvents()
     assert win.v2_ai_dialog is not None and win.v2_ai_dialog.isVisible()
+    assert "2.1.2" in win.v2_ai_dialog.windowTitle()
     win.v2_ai_dialog.close()
     app.processEvents()
 
