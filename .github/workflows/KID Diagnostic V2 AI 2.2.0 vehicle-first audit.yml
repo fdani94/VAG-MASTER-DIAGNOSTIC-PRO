@@ -1,0 +1,227 @@
+name: KID Diagnostic V2 AI 2.2.0 Vehicle First Audit
+
+on:
+  push:
+    branches:
+      - feature/v2-vehicle-first-coding-ui-220
+  pull_request:
+    branches:
+      - codex/v2-final-validation
+  workflow_dispatch:
+
+concurrency:
+  group: kid-v2-ai-220-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit-windows:
+    runs-on: windows-latest
+    timeout-minutes: 55
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        shell: powershell
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements.txt
+          python -m pip install --disable-pip-version-check pyinstaller==6.22.2 pillow
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Compile V2 2.2.0 runtime
+        shell: powershell
+        run: |
+          python -m py_compile autoscan_parser.py ui_autoscan_pdf_export.py `
+            versiune-v2/main_v2.py versiune-v2/ui_v2.py `
+            versiune-v2/v2_runtime_db.py `
+            versiune-v2/v2_ai_copilot.py versiune-v2/v2_ai_parser_bridge.py `
+            versiune-v2/v2_ai_ui_patch.py versiune-v2/v2_ai_pdf_patch.py `
+            versiune-v2/v2_ai_hardening_patch.py versiune-v2/v2_ai_shutdown_patch.py `
+            versiune-v2/v2_ai_language_safety_patch.py `
+            versiune-v2/v2_vehicle_first_patch.py `
+            versiune-v2/test_v2_vehicle_first.py `
+            versiune-v2/v2_vehicle_first_validation.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run existing Auto-Scan regressions
+        shell: powershell
+        run: |
+          python -m unittest discover -s tests -p "test_*.py" -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run AI, SQLite and safety regressions
+        shell: powershell
+        run: |
+          python versiune-v2/test_v2_ai_copilot.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python versiune-v2/test_v2_runtime_db.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python versiune-v2/test_v2_ai_hardening.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run V2.2.0 vehicle-first regressions
+        shell: powershell
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python versiune-v2/test_v2_vehicle_first.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run integrated validations
+        shell: powershell
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python versiune-v2/final_validation.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python versiune-v2/v2_ai_functional_validation.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python versiune-v2/v2_ai_hardening_validation.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python versiune-v2/v2_vehicle_first_validation.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Create KID Diagnostic V2 icon
+        shell: powershell
+        run: |
+          @'
+          from PIL import Image, ImageDraw, ImageFont
+          S=512
+          im=Image.new('RGBA',(S,S),(235,244,250,255))
+          d=ImageDraw.Draw(im)
+          d.rounded_rectangle((18,18,S-18,S-18), radius=105, fill=(255,255,255,255), outline=(66,151,217,255), width=18)
+          d.rounded_rectangle((105,150,407,255), radius=45, outline=(45,148,220,255), width=12)
+          d.line((150,150,205,105,310,105,362,150), fill=(71,116,150,255), width=12)
+          d.ellipse((125,225,185,285), fill=(242,248,252,255), outline=(40,142,215,255), width=8)
+          d.ellipse((327,225,387,285), fill=(242,248,252,255), outline=(40,142,215,255), width=8)
+          try:
+              f1=ImageFont.truetype('C:/Windows/Fonts/arialbd.ttf',105)
+              f2=ImageFont.truetype('C:/Windows/Fonts/arialbd.ttf',42)
+          except Exception:
+              f1=f2=None
+          box=d.textbbox((0,0),'KID',font=f1)
+          d.text(((S-(box[2]-box[0]))//2,278),'KID',font=f1,fill=(28,63,91,255),stroke_width=2,stroke_fill=(94,171,224,255))
+          box=d.textbbox((0,0),'DIAGNOSTIC',font=f2)
+          d.text(((S-(box[2]-box[0]))//2,385),'DIAGNOSTIC',font=f2,fill=(42,137,203,255))
+          im.save('kid_diagnostic_v2.ico', sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])
+          '@ | Set-Content make_v2_ai_icon.py
+          python make_v2_ai_icon.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build V2 AI 2.2.0 executable
+        shell: powershell
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed `
+            --name KID-Diagnostic-V2-AI `
+            --icon kid_diagnostic_v2.ico `
+            --paths . --paths versiune-v2 `
+            --hidden-import ui_v2 `
+            --hidden-import dtc_reference_index_pack `
+            --hidden-import obd_reference_index_pack `
+            --hidden-import v2_runtime_db `
+            --hidden-import v2_diagnostic_patch `
+            --hidden-import v2_ui_runtime_patch `
+            --hidden-import v2_master_ui_patch `
+            --hidden-import v2_visual_fix `
+            --hidden-import v2_redesign_patch `
+            --hidden-import v2_responsive_windows_patch `
+            --hidden-import v2_functional_windows_patch `
+            --hidden-import v2_pdf_fix_patch `
+            --hidden-import v2_integrated_navigation_patch `
+            --hidden-import v2_pdf_report `
+            --hidden-import v2_ai_copilot `
+            --hidden-import v2_ai_parser_bridge `
+            --hidden-import v2_ai_ui_patch `
+            --hidden-import v2_ai_pdf_patch `
+            --hidden-import v2_ai_hardening_patch `
+            --hidden-import v2_ai_shutdown_patch `
+            --hidden-import v2_ai_language_safety_patch `
+            --hidden-import v2_vehicle_first_patch `
+            --collect-all pypdf `
+            --collect-all reportlab `
+            versiune-v2/main_v2.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $exe = Get-Item "dist\KID-Diagnostic-V2-AI.exe"
+          if ($exe.Length -lt 10000000) { throw "EXE V2.2.0 pare invalid: $($exe.Length) bytes" }
+
+      - name: Audit critical PyInstaller modules
+        shell: powershell
+        run: |
+          $warn = "build\KID-Diagnostic-V2-AI\warn-KID-Diagnostic-V2-AI.txt"
+          if (-not (Test-Path $warn)) { throw "PyInstaller warning file lipsește." }
+          $critical = @(
+            "ui_v2","v2_runtime_db","v2_ai_copilot","v2_ai_ui_patch","v2_ai_pdf_patch",
+            "v2_ai_hardening_patch","v2_ai_shutdown_patch","v2_ai_language_safety_patch",
+            "v2_vehicle_first_patch","v2_integrated_navigation_patch","v2_functional_windows_patch"
+          )
+          foreach ($module in $critical) {
+            $escaped = [regex]::Escape($module)
+            $pattern = "^missing module named '?$escaped'?\s+-"
+            if (Select-String -Path $warn -Pattern $pattern -Quiet) {
+              throw "PyInstaller raportează modul critic lipsă: $module"
+            }
+          }
+
+      - name: Run compiled smoke validation
+        shell: powershell
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $p = Start-Process -FilePath "dist\KID-Diagnostic-V2-AI.exe" -ArgumentList "--compiled-smoke" -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "Compiled smoke a eșuat cu cod $($p.ExitCode)" }
+
+      - name: Verify packaged startup remains alive
+        shell: powershell
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $p = Start-Process -FilePath "dist\KID-Diagnostic-V2-AI.exe" -PassThru
+          Start-Sleep -Seconds 15
+          if ($p.HasExited) { throw "EXE V2.2.0 s-a închis prematur cu cod $($p.ExitCode)" }
+          Stop-Process -Id $p.Id -Force
+
+      - name: Ensure Inno Setup
+        shell: powershell
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup --no-progress -y }
+          if (-not (Test-Path $iscc)) { throw "Inno Setup nu este disponibil." }
+
+      - name: Build V2 AI 2.2.0 installer
+        shell: powershell
+        run: '& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" versiune-v2\installer_v2_ai_220.iss'
+
+      - name: Verify hashes
+        shell: powershell
+        run: |
+          $exe = Resolve-Path "dist\KID-Diagnostic-V2-AI.exe"
+          $setup = Resolve-Path "versiune-v2\dist-v2-installer\KID-Diagnostic-V2-AI-v2.2.0-Setup.exe"
+          if ((Get-Item $setup).Length -lt 10000000) { throw "Installer V2.2.0 pare invalid." }
+          $exeHash = Get-FileHash $exe -Algorithm SHA256
+          $setupHash = Get-FileHash $setup -Algorithm SHA256
+          @(
+            "$($exeHash.Hash)  KID-Diagnostic-V2-AI-v2.2.0.exe",
+            "$($setupHash.Hash)  KID-Diagnostic-V2-AI-v2.2.0-Setup.exe"
+          ) | Set-Content -Encoding ASCII "SHA256SUMS-KID-V2-AI-v2.2.0.txt"
+          Copy-Item $exe "KID-Diagnostic-V2-AI-v2.2.0.exe"
+          Get-Content "SHA256SUMS-KID-V2-AI-v2.2.0.txt"
+
+      - name: Upload audited V2.2.0 package
+        uses: actions/upload-artifact@v6
+        with:
+          name: KID-DIAGNOSTIC-V2-AI-V2-2-0-VEHICLE-FIRST
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            KID-Diagnostic-V2-AI-v2.2.0.exe
+            versiune-v2/dist-v2-installer/KID-Diagnostic-V2-AI-v2.2.0-Setup.exe
+            SHA256SUMS-KID-V2-AI-v2.2.0.txt
+            build/KID-Diagnostic-V2-AI/warn-KID-Diagnostic-V2-AI.txt
+            v2_220_*.png
+            KID_Diagnostic_V2_AI_TEST.pdf
