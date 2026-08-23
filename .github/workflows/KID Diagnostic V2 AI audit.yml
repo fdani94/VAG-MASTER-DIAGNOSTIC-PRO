@@ -4,9 +4,12 @@ on:
   push:
     branches:
       - feature/v2-ai-copilot-audit
+  pull_request:
+    branches:
+      - codex/v2-final-validation
 
 concurrency:
-  group: kid-v2-ai-audit-${{ github.ref }}
+  group: kid-v2-ai-audit-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
