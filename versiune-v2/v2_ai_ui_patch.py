@@ -3,6 +3,7 @@ from __future__ import annotations
 from PySide6.QtCore import QThread, Signal, Qt
 from PySide6.QtWidgets import (
     QDialog,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -19,7 +20,55 @@ from v2_ai_copilot import (
     parse_autoscan_file_audited,
 )
 
-AI_UI_VERSION = "2.1.0"
+AI_UI_VERSION = "2.1.1"
+
+PAGE_AI = {
+    0: (
+        "AI GENERAL",
+        "Întreabă AI despre vehicul, funcții VCDS sau ce modul trebuie verificat.",
+        "Ajută-mă să folosesc KID Diagnostic V2 pentru vehiculul selectat și spune-mi ce funcție VCDS este potrivită.",
+    ),
+    1: (
+        "AI AUTO-SCAN",
+        "Verifică citirea, prioritizarea DTC și raportul BEFORE/AFTER.",
+        "Analizează Auto-Scan-ul curent, verifică dacă a fost citit complet și spune-mi în ce ordine investighez erorile.",
+    ),
+    2: (
+        "AI DTC",
+        "Explică DTC, cauze, verificări și ordinea diagnosticului.",
+        "Explică DTC-urile relevante pentru vehiculul curent și spune-mi ce verific mai întâi fără să presupui piese.",
+    ),
+    3: (
+        "AI CODARE",
+        "Ajutor Coding / Long Coding bazat pe ECU și Coding ORIGINAL.",
+        "Ajută-mă la Coding / Long Coding pentru vehiculul curent. Folosește numai identificarea controllerului și Coding ORIGINAL; nu inventa valori.",
+    ),
+    4: (
+        "AI ADAPTĂRI",
+        "Ajutor Adaptation / Basic Settings / calibrări.",
+        "Ajută-mă la Adaptation sau Basic Settings pentru vehiculul curent și spune condițiile, backup-ul necesar și verificarea finală.",
+    ),
+    5: (
+        "AI SERVICE",
+        "Ajutor resetări, DPF, EPB, baterie și proceduri service.",
+        "Ajută-mă cu operația de service pentru vehiculul curent. Spune exact ce trebuie confirmat înainte și cum verific rezultatul.",
+    ),
+    6: (
+        "AI LIVE DATA",
+        "Alege parametrii live relevanți și explică actual vs target.",
+        "Ajută-mă să aleg valorile Live Data relevante pentru problema curentă și cum interpretez actual versus specified/target.",
+    ),
+    7: (
+        "AI MODULE",
+        "Identifică modulul, adresa și traseul VCDS corect.",
+        "Ajută-mă să identific controllerul corect, adresa lui și traseul VCDS pentru funcția dorită pe vehiculul curent.",
+    ),
+    8: (
+        "AI RAPORT",
+        "Verifică și reface raportul cu dovezi din Auto-Scan.",
+        "Refă raportul automat din Auto-Scan, verifică-l și evidențiază Coding ORIGINAL, DTC și pașii de diagnostic.",
+    ),
+}
 
 
 def _vehicle_text(owner) -> str:
@@ -71,7 +120,7 @@ class CopilotDialog(QDialog):
         super().__init__(owner)
         self.owner = owner
         self._workers = []
-        self.setWindowTitle("KID Diagnostic V2 • AI Copilot VCDS")
+        self.setWindowTitle("KID Diagnostic V2 • AI Copilot VCDS • 2.1.1")
         self.resize(940, 720)
         self.setMinimumSize(760, 560)
 
@@ -79,10 +128,11 @@ class CopilotDialog(QDialog):
         root.setContentsMargins(16, 16, 16, 16)
         root.setSpacing(10)
 
-        title = QLabel("KID V2 AI COPILOT • VCDS")
-        title.setStyleSheet("font-size:18px;font-weight:700;color:#dff2ff;")
+        title = QLabel("KID V2 AI COPILOT • ACTIV")
+        title.setStyleSheet("font-size:18px;font-weight:800;color:#dff2ff;")
         mode = "motor local + model extern" if owner.v2_ai_copilot.external_model_ready else "motor local verificabil"
-        subtitle = QLabel(f"{mode} • fără coding / Security Access inventat")
+        subtitle = QLabel(f"{mode} • context din toate funcțiile V2 • fără coding / Security Access inventat")
+        subtitle.setWordWrap(True)
         subtitle.setStyleSheet("color:#8fb4cc;")
         root.addWidget(title)
         root.addWidget(subtitle)
@@ -99,7 +149,7 @@ class CopilotDialog(QDialog):
             ("Verifică Auto-Scan", "Verifică dacă Auto-Scan-ul a fost citit corect și spune exact ce nu se potrivește."),
             ("Explică DTC", "Explică DTC-urile din Auto-Scan în ordinea priorității și spune ce verific mai întâi."),
             ("Ajutor codare", "Ajută-mă la coding VCDS folosind numai identificarea și Coding ORIGINAL din Auto-Scan."),
-            ("Funcții VCDS", "Explică funcțiile VCDS principale și când folosesc Coding, Adaptation, Basic Settings, Output Tests și Live Data."),
+            ("Adaptări", "Ajută-mă la Adaptation și Basic Settings fără valori inventate."),
             ("Refă raport", "Refă raportul automat din Auto-Scan și verifică-l."),
         ]
         for label, prompt in actions:
@@ -172,6 +222,53 @@ class CopilotDialog(QDialog):
         worker.start()
 
 
+def _ai_strip(owner, index: int) -> QFrame:
+    label, description, _prompt = PAGE_AI.get(index, PAGE_AI[0])
+    frame = QFrame()
+    frame.setObjectName(f"kidAiStrip{index}")
+    frame.setStyleSheet(
+        "QFrame{background:#082236;border:1px solid #1e8ac0;border-radius:10px;}"
+        "QLabel{background:transparent;border:none;}"
+        "QPushButton{background:#1475aa;color:white;border:1px solid #43b9ef;border-radius:7px;padding:7px 12px;font-weight:800;}"
+        "QPushButton:hover{background:#188dc8;}"
+    )
+    row = QHBoxLayout(frame)
+    row.setContentsMargins(12, 8, 12, 8)
+    row.setSpacing(10)
+
+    badge = QLabel(label)
+    badge.setStyleSheet("color:#72d5ff;font-weight:900;font-size:12px;")
+    text = QLabel(description)
+    text.setWordWrap(True)
+    text.setStyleSheet("color:#d7effb;font-weight:600;")
+    action = QPushButton("AJUTOR AI AICI")
+    action.clicked.connect(lambda _checked=False, i=index: owner.ask_v2_ai_for_page(i))
+    chat = QPushButton("CHAT AI")
+    chat.clicked.connect(owner.open_v2_ai_copilot)
+
+    row.addWidget(badge)
+    row.addWidget(text, 1)
+    row.addWidget(action)
+    row.addWidget(chat)
+    return frame
+
+
+def _install_ai_strips(owner):
+    stack = getattr(owner, "stack", None)
+    if stack is None:
+        return
+    for index in range(stack.count()):
+        page = stack.widget(index)
+        layout = page.layout() if page is not None else None
+        if layout is None or page.findChild(QFrame, f"kidAiStrip{index}") is not None:
+            continue
+        strip = _ai_strip(owner, index)
+        if hasattr(layout, "insertWidget"):
+            layout.insertWidget(1, strip)
+        else:
+            layout.addWidget(strip)
+
+
 def apply():
     import ui_v2
 
@@ -189,24 +286,33 @@ def apply():
         self.v2_ai_copilot = V2AICopilot()
         self.v2_verified_report_text = ""
         self.v2_ai_dialog = None
+        self.setWindowTitle("KID Diagnostic V2 • AI Copilot • v2.1.1")
 
         toolbar = QToolBar("KID V2 AI Copilot", self)
         toolbar.setObjectName("kidV2AiToolbar")
         toolbar.setMovable(False)
         toolbar.setFloatable(False)
-        button = QPushButton("AI COPILOT")
+        toolbar.setStyleSheet("QToolBar{background:#061a2a;border-bottom:1px solid #17638c;padding:4px;}")
+        button = QPushButton("AI COPILOT • ACTIV")
         button.setToolTip("Deschide asistentul VCDS ancorat în Auto-Scan și baza KID V2")
         button.setStyleSheet(
-            "QPushButton{background:#15679a;color:white;border:1px solid #39a9df;border-radius:8px;padding:7px 14px;font-weight:700;}"
-            "QPushButton:hover{background:#1a7db7;}"
+            "QPushButton{background:#156f9f;color:white;border:1px solid #4bc7ff;border-radius:8px;padding:8px 16px;font-weight:900;}"
+            "QPushButton:hover{background:#1a8bc4;}"
         )
         button.clicked.connect(self.open_v2_ai_copilot)
         toolbar.addWidget(button)
-        status = QLabel("  AI: verificare locală activă  ")
-        status.setStyleSheet("color:#56788e;font-weight:600;")
+        status = QLabel("  AI disponibil în Dashboard + toate cele 8 funcții  ")
+        status.setStyleSheet("color:#8fdcff;font-weight:700;")
         toolbar.addWidget(status)
         self.addToolBar(Qt.TopToolBarArea, toolbar)
         self.v2_ai_toolbar = toolbar
+        self.v2_ai_status = status
+
+        _install_ai_strips(self)
+        try:
+            self.statusBar().showMessage("KID Diagnostic V2 v2.1.1 • AI Copilot activ • bază V2 separată")
+        except Exception:
+            pass
 
     def _load_autoscan(self):
         original_load_autoscan(self)
@@ -263,8 +369,18 @@ def apply():
         dialog.raise_()
         dialog.activateWindow()
 
+    def ask_v2_ai_for_page(self, index=None):
+        if index is None:
+            stack = getattr(self, "stack", None)
+            index = stack.currentIndex() if stack is not None else 0
+        _label, _description, prompt = PAGE_AI.get(int(index), PAGE_AI[0])
+        self.open_v2_ai_copilot()
+        if self.v2_ai_dialog is not None:
+            self.v2_ai_dialog.send(prompt)
+
     cls.__init__ = __init__
     cls._load_autoscan = _load_autoscan
     cls.rebuild_v2_verified_report = rebuild_v2_verified_report
     cls.open_v2_ai_copilot = open_v2_ai_copilot
+    cls.ask_v2_ai_for_page = ask_v2_ai_for_page
     cls._kid_v2_ai_copilot_applied = True
