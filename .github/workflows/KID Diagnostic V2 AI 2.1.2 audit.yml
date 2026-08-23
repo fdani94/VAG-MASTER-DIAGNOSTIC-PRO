@@ -162,7 +162,7 @@ jobs:
           )
           foreach ($module in $critical) {
             $escaped = [regex]::Escape($module)
-            $pattern = "missing module named.*$escaped"
+            $pattern = "^missing module named '?$escaped'?\s+-"
             if (Select-String -Path $warn -Pattern $pattern -Quiet) {
               throw "PyInstaller raportează modul critic lipsă: $module"
             }
