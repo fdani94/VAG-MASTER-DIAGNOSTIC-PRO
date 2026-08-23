@@ -39,6 +39,17 @@ class SlowLocalCopilot:
         return "RĂSPUNS THREAD OK <b>literal</b>"
 
 
+def wait_until(app, predicate, timeout=5.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        app.processEvents()
+        if predicate():
+            return True
+        time.sleep(0.05)
+    app.processEvents()
+    return bool(predicate())
+
+
 def main():
     main_v2.prepare_database()
     main_v2.apply_v2_patches()
@@ -59,6 +70,7 @@ def main():
 
     assert "2.1.2" in win.windowTitle(), win.windowTitle()
     assert getattr(win.__class__, "_kid_v2_ai_hardening_applied", False)
+    assert getattr(win.__class__, "_kid_v2_ai_shutdown_applied", False)
     toolbar = win.findChild(QToolBar, "kidV2AiToolbar")
     assert toolbar is not None and toolbar.isVisible()
     assert len(getattr(win, "v2_ai_strips", {})) == 9
@@ -93,15 +105,17 @@ def main():
     assert "<img src='x'>" in plain, plain
     assert dialog.grab().save(str(ROOT / "v2_ai_212_chat.png"), "PNG")
 
-    # QThread lifetime regression: close while a response is running, then reopen.
+    # QThread lifetime regression 1: close CHAT while response is running.
     win.v2_ai_copilot = SlowLocalCopilot()
-    dialog.send("test thread")
+    dialog.send("test thread chat close")
     app.processEvents()
-    assert any(worker.isRunning() for worker in dialog._workers)
+    worker = dialog._workers[0]
+    assert worker.isRunning()
     dialog.close()
     app.processEvents()
     assert not dialog.isVisible(), "Dialog should hide while worker is running"
     assert win.v2_ai_dialog is dialog, "Running worker dialog must stay alive"
+    assert worker in dialog._workers, "Worker reference was released before QThread.finished"
 
     win.open_v2_ai_copilot()
     app.processEvents()
@@ -110,22 +124,43 @@ def main():
 
     dialog.close()
     app.processEvents()
-    deadline = time.monotonic() + 5.0
-    while time.monotonic() < deadline and win.v2_ai_dialog is not None:
-        app.processEvents()
-        time.sleep(0.05)
+    assert wait_until(app, lambda: win.v2_ai_dialog is None), (
+        "Dialog should delete only after QThread.finished"
+    )
+    assert not worker.isRunning(), "Worker still running after dialog deletion"
+
+    # QThread lifetime regression 2: close MAIN APP while AI is running.
+    win.open_v2_ai_copilot()
     app.processEvents()
-    assert win.v2_ai_dialog is None, "Dialog should delete only after worker finishes"
+    dialog2 = win.v2_ai_dialog
+    assert dialog2 is not None
+    win.v2_ai_copilot = SlowLocalCopilot()
+    dialog2.send("test thread main close")
+    app.processEvents()
+    worker2 = dialog2._workers[0]
+    assert worker2.isRunning()
+
+    win.close()
+    app.processEvents()
+    assert win.isVisible(), "Main window closed before active AI QThread finished"
+    assert getattr(win, "_kid_close_when_ai_idle", False)
+    assert not dialog2.isVisible(), "AI dialog should hide during deferred app shutdown"
+    assert worker2 in dialog2._workers, "Main close released AI worker too early"
+
+    assert wait_until(app, lambda: not worker2.isRunning()), "AI worker did not finish"
+    assert wait_until(app, lambda: not win.isVisible()), (
+        "Main window did not close automatically after AI worker finished"
+    )
 
     print(
         "V2 AI 2.1.2 HARDENING AUDIT OK",
         "html_escape=ok",
-        "thread_lifecycle=ok",
+        "chat_thread_lifecycle=ok",
+        "main_shutdown_lifecycle=ok",
         "context=P0299",
         f"ai_strips={len(win.v2_ai_strips)}",
     )
 
-    win.close()
     app.quit()
 
 
