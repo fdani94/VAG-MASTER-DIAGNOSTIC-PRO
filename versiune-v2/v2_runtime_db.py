@@ -43,7 +43,7 @@ def _safe_connect() -> sqlite3.Connection:
     return con
 
 
-def _retry_locked(fn, *, timeout: float = 60.0):
+def _retry_locked(fn, *, timeout: float = 60.0, on_retry=None):
     deadline = time.monotonic() + timeout
     last_exc = None
     while time.monotonic() < deadline:
@@ -53,17 +53,25 @@ def _retry_locked(fn, *, timeout: float = 60.0):
             if "locked" not in str(exc).lower() and "busy" not in str(exc).lower():
                 raise
             last_exc = exc
+            if on_retry is not None:
+                on_retry()
             time.sleep(0.25)
     if last_exc:
         raise last_exc
+    raise TimeoutError("Operația SQLite nu s-a putut finaliza în intervalul permis.")
 
 
 def _setting(con: sqlite3.Connection, key: str) -> str:
     try:
         row = con.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
         return str(row[0]) if row else ""
-    except sqlite3.OperationalError:
-        return ""
+    except sqlite3.OperationalError as exc:
+        # Before SCHEMA is created the settings table can legitimately be absent.
+        # Lock/busy errors must propagate so the retry layer can actually retry;
+        # swallowing them could incorrectly trigger a second seed pass.
+        if "no such table" in str(exc).lower():
+            return ""
+        raise
 
 
 def _set_setting(con: sqlite3.Connection, key: str, value: str) -> None:
@@ -72,6 +80,30 @@ def _set_setting(con: sqlite3.Connection, key: str, value: str) -> None:
         "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
         (key, value),
     )
+
+
+def _rollback_quietly(con: sqlite3.Connection) -> None:
+    try:
+        con.rollback()
+    except sqlite3.Error:
+        pass
+
+
+def _initialize_seed_transaction(con: sqlite3.Connection) -> None:
+    """Run the base seed atomically from the caller's point of view.
+
+    If SQLite reports a transient lock after some seed statements already ran,
+    rollback before retrying. Without that rollback a retry could observe its own
+    partial transaction (for example COUNT(*) > 0) and accidentally commit an
+    incomplete catalog.
+    """
+    try:
+        appdb.seed(con)
+        _set_setting(con, V2_BASE_SEED_KEY, "1")
+        con.commit()
+    except Exception:
+        _rollback_quietly(con)
+        raise
 
 
 def configure_database_runtime() -> Path:
@@ -88,18 +120,24 @@ def configure_database_runtime() -> Path:
         con = _safe_connect()
 
         def initialize_schema():
-            con.executescript(appdb.SCHEMA)
-            con.commit()
-
-        _retry_locked(initialize_schema)
-
-        if _setting(con, V2_BASE_SEED_KEY) != "1":
-            def initialize_seed():
-                appdb.seed(con)
-                _set_setting(con, V2_BASE_SEED_KEY, "1")
+            try:
+                con.executescript(appdb.SCHEMA)
                 con.commit()
+            except Exception:
+                _rollback_quietly(con)
+                raise
 
-            _retry_locked(initialize_seed)
+        _retry_locked(initialize_schema, on_retry=lambda: _rollback_quietly(con))
+
+        base_seed = _retry_locked(
+            lambda: _setting(con, V2_BASE_SEED_KEY),
+            on_retry=lambda: _rollback_quietly(con),
+        )
+        if base_seed != "1":
+            _retry_locked(
+                lambda: _initialize_seed_transaction(con),
+                on_retry=lambda: _rollback_quietly(con),
+            )
         return con
 
     appdb.connect_db = connect_db
@@ -162,9 +200,16 @@ def database_init_guard(timeout: float = 90.0):
 
 
 def expansion_is_current(con: sqlite3.Connection) -> bool:
-    return _setting(con, V2_EXPANSION_KEY) == V2_DB_REVISION
+    return _retry_locked(
+        lambda: _setting(con, V2_EXPANSION_KEY),
+        on_retry=lambda: _rollback_quietly(con),
+    ) == V2_DB_REVISION
 
 
 def mark_expansion_current(con: sqlite3.Connection) -> None:
-    _set_setting(con, V2_EXPANSION_KEY, V2_DB_REVISION)
-    con.commit()
+    try:
+        _set_setting(con, V2_EXPANSION_KEY, V2_DB_REVISION)
+        con.commit()
+    except Exception:
+        _rollback_quietly(con)
+        raise
