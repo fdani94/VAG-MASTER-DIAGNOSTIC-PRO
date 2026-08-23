@@ -19,6 +19,7 @@ main_v2.apply_v2_patches()
 
 from v2_ai_copilot import V2AICopilot
 from v2_ai_hardening_patch import HARDENING_VERSION
+from v2_ai_language_safety_patch import _fold_upper
 
 
 class V2AiHardeningTests(unittest.TestCase):
@@ -45,6 +46,34 @@ class V2AiHardeningTests(unittest.TestCase):
         self.assertIn("Coding - 07 / Long Coding", answer)
         self.assertIn("Nu dau o valoare exactă", answer)
         self.assertNotIn("AI extern", answer)
+
+    def test_romanian_coding_words_cannot_bypass_external_ai_guard(self):
+        env = {
+            "KID_V2_AI_BASE_URL": "https://example.com/v1",
+            "KID_V2_AI_MODEL": "test-model",
+        }
+        variants = (
+            "Ce înseamnă codări?",
+            "Ce inseamna codari?",
+            "Ajută-mă cu codificări la modulul 09",
+            "Ajuta-ma cu codificare la modulul 09",
+        )
+        with patch.dict(os.environ, env, clear=False):
+            for question in variants:
+                with self.subTest(question=question):
+                    copilot = V2AICopilot()
+                    with patch.object(
+                        copilot,
+                        "_external_answer",
+                        side_effect=AssertionError("Romanian coding wording reached external AI"),
+                    ):
+                        answer = copilot.ask(question)
+                    self.assertIn("Coding - 07 / Long Coding", answer)
+                    self.assertNotIn("AI extern", answer)
+
+    def test_diacritic_normalizer_is_stable(self):
+        self.assertEqual(_fold_upper("Codări și funcții"), "CODARI SI FUNCTII")
+        self.assertEqual(_fold_upper("adaptări"), "ADAPTARI")
 
     def test_external_read_only_answer_is_supplemental_not_replacement(self):
         env = {
