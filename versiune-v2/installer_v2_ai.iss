@@ -1,5 +1,5 @@
 #define MyAppName "KID Diagnostic V2"
-#define MyAppVersion "2.1.0"
+#define MyAppVersion "2.1.1"
 #define MyAppPublisher "KID Diagnostic"
 #define MyAppExeName "KID-Diagnostic-V2-AI.exe"
 #define MyAppIconName "kid_diagnostic_v2.ico"
@@ -13,7 +13,7 @@ DefaultDirName={autopf}\KID Diagnostic V2
 DefaultGroupName=KID Diagnostic V2
 DisableProgramGroupPage=yes
 OutputDir=dist-v2-installer
-OutputBaseFilename=KID-Diagnostic-V2-AI-v2.1.0-Setup
+OutputBaseFilename=KID-Diagnostic-V2-AI-v2.1.1-Setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -23,6 +23,8 @@ ArchitecturesInstallIn64BitMode=x64compatible
 SetupIconFile=..\kid_diagnostic_v2.ico
 UninstallDisplayName={#MyAppName}
 UninstallDisplayIcon={app}\{#MyAppIconName}
+CloseApplications=yes
+RestartApplications=no
 
 [Files]
 Source: "..\dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
@@ -36,4 +38,4 @@ Name: "{autodesktop}\KID Diagnostic V2"; Filename: "{app}\{#MyAppExeName}"; Icon
 Name: "desktopicon"; Description: "Creează scurtătură KID Diagnostic V2 pe Desktop"; GroupDescription: "Scurtături suplimentare:"
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Pornește KID Diagnostic V2"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Description: "Pornește KID Diagnostic V2 v2.1.1"; Flags: nowait postinstall skipifsilent
