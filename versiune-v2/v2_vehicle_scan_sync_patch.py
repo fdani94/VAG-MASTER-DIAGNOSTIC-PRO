@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-SYNC_VERSION = "2.2.0"
+from v2_vehicle_precision_patch import apply as apply_precision
+
+SYNC_VERSION = "2.2.1"
 
 
 def _selection_key(owner):
@@ -25,6 +27,8 @@ def _clear_scan_state(owner):
     owner.autoscan_plans = []
     owner.autoscan_correlation = None
     owner.v2_verified_report_text = ""
+    owner.autoscan_vehicle_binding_ok = False
+    owner.autoscan_vehicle_match = None
 
     table = getattr(owner, "autoscan_table", None)
     if table is not None:
@@ -54,6 +58,7 @@ def apply():
 
     cls = ui_v2.MainWindowV2
     if getattr(cls, "_kid_vehicle_scan_sync_applied", False):
+        apply_precision()
         return
 
     previous_select_vehicle = cls._select_vehicle
@@ -88,6 +93,7 @@ def apply():
     cls._select_vehicle = select_vehicle_synced
     cls._load_autoscan = load_autoscan_synced
     cls._kid_vehicle_scan_sync_applied = True
+    apply_precision()
 
 
 __all__ = ["SYNC_VERSION", "apply"]
