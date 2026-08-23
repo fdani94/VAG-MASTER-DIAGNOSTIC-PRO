@@ -59,11 +59,16 @@ def main():
     main_v2.prepare_database()
     main_v2.apply_v2_patches()
 
-    from PySide6.QtWidgets import QApplication, QMessageBox, QToolBar
+    from PySide6.QtWidgets import QApplication, QMessageBox, QToolBar, QFrame
     import ui_v2
     import v2_functional_windows_patch as functional
     import v2_pdf_fix_patch as pdf_fix
     from pypdf import PdfReader
+
+    # V2 must use a dedicated writable DB, not the legacy VAG MASTER database.
+    db_path = Path(main_v2.appdb.DB_PATH)
+    assert db_path.name == "kid_diagnostic_v2.db", db_path
+    assert "KID Diagnostic V2" in str(db_path.parent), db_path
 
     app = QApplication.instance() or QApplication([])
     QMessageBox.warning = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Ok)
@@ -74,9 +79,25 @@ def main():
     win.show()
     app.processEvents()
 
+    # Re-run database preparation while the application's live connection is open.
+    # This reproduces the real-world condition that previously raised "database is locked".
+    main_v2.prepare_database()
+
     assert hasattr(win, "v2_ai_copilot")
+    assert "AI Copilot" in win.windowTitle()
+    assert "2.1.1" in win.windowTitle()
     toolbar = win.findChild(QToolBar, "kidV2AiToolbar")
     assert toolbar is not None, "AI toolbar missing"
+
+    ai_strips = []
+    for index in range(win.stack.count()):
+        page = win.stack.widget(index)
+        strip = page.findChild(QFrame, f"kidAiStrip{index}")
+        assert strip is not None, f"AI strip missing on V2 page {index}"
+        assert strip.isVisible() or page is not win.stack.currentWidget()
+        ai_strips.append(strip)
+    assert len(ai_strips) == 9, len(ai_strips)
+
     assert choose_first_vehicle(win, app), "No selectable vehicle for AI validation"
 
     sample = ROOT / "sample_v2_ai_uds.txt"
@@ -92,6 +113,7 @@ def main():
 
     win.open_page(1)
     app.processEvents()
+    assert win.stack.currentWidget().findChild(QFrame, "kidAiStrip1").isVisible()
     win._load_autoscan()
     app.processEvents()
 
@@ -152,6 +174,8 @@ def main():
 
     print(
         "V2 AI FUNCTIONAL AUDIT OK",
+        f"db={db_path}",
+        f"ai_strips={len(ai_strips)}",
         f"score={scan.audit['score']}",
         f"modules={len(scan.modules)}",
         f"faults={len(scan.faults)}",
