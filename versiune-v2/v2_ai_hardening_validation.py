@@ -110,6 +110,8 @@ def main():
     dialog.send("test thread chat close")
     app.processEvents()
     worker = dialog._workers[0]
+    chat_finished = {"value": False}
+    worker.finished.connect(lambda: chat_finished.__setitem__("value", True))
     assert worker.isRunning()
     dialog.close()
     app.processEvents()
@@ -124,10 +126,10 @@ def main():
 
     dialog.close()
     app.processEvents()
+    assert wait_until(app, lambda: chat_finished["value"]), "QThread.finished was not emitted"
     assert wait_until(app, lambda: win.v2_ai_dialog is None), (
         "Dialog should delete only after QThread.finished"
     )
-    assert not worker.isRunning(), "Worker still running after dialog deletion"
 
     # QThread lifetime regression 2: close MAIN APP while AI is running.
     win.open_v2_ai_copilot()
@@ -138,6 +140,8 @@ def main():
     dialog2.send("test thread main close")
     app.processEvents()
     worker2 = dialog2._workers[0]
+    main_finished = {"value": False}
+    worker2.finished.connect(lambda: main_finished.__setitem__("value", True))
     assert worker2.isRunning()
 
     win.close()
@@ -147,7 +151,7 @@ def main():
     assert not dialog2.isVisible(), "AI dialog should hide during deferred app shutdown"
     assert worker2 in dialog2._workers, "Main close released AI worker too early"
 
-    assert wait_until(app, lambda: not worker2.isRunning()), "AI worker did not finish"
+    assert wait_until(app, lambda: main_finished["value"]), "AI worker did not emit finished"
     assert wait_until(app, lambda: not win.isVisible()), (
         "Main window did not close automatically after AI worker finished"
     )
