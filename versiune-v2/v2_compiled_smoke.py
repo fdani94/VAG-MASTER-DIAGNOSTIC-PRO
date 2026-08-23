@@ -1,9 +1,8 @@
 """Smoke test executed from the packaged Windows EXE.
 
-It targets the regression seen on a real Windows desktop: feature cards opened
-secondary blank windows after PyInstaller widget reparenting. V2.2.0 also
-requires a complete vehicle context (generation + year + engine) before any
-vehicle-specific workspace can be trusted.
+It targets packaged navigation plus the V2.2.1 precision invariants: a complete
+year-valid engine selection, explicit coding columns, and modules that are not
+silently presented as vehicle-specific when the local generation map is empty.
 """
 from __future__ import annotations
 
@@ -11,7 +10,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox, QPushButton
 
 
 def _select_real_vehicle(win, app):
-    """Select the first catalog vehicle that has a real engine entry."""
+    """Select the first catalog vehicle/year that has a real valid engine entry."""
     for brand_index in range(1, win.brand_combo.count()):
         win.brand_combo.setCurrentIndex(brand_index)
         app.processEvents()
@@ -21,32 +20,30 @@ def _select_real_vehicle(win, app):
             for generation_index in range(1, win.gen_combo.count()):
                 win.gen_combo.setCurrentIndex(generation_index)
                 app.processEvents()
+                for year_index in range(win.year_combo.count()):
+                    win.year_combo.setCurrentIndex(year_index)
+                    app.processEvents()
+                    if win.engine_combo.count() <= 1:
+                        continue
+                    win.engine_combo.setCurrentIndex(1)
+                    app.processEvents()
+                    if win.engine_combo.currentData() is None:
+                        continue
 
-                if win.year_combo.count() <= 0 or win.engine_combo.count() <= 1:
-                    continue
-
-                win.year_combo.setCurrentIndex(0)
-                # Index 0 is deliberately "Nespecificat" in V2.2.0.
-                win.engine_combo.setCurrentIndex(1)
-                app.processEvents()
-                if win.engine_combo.currentData() is None:
-                    continue
-
-                button = next(
-                    (b for b in win.findChildren(QPushButton) if b.text() == "CONFIRMĂ VEHICULUL"),
-                    None,
-                )
-                if button is None:
-                    continue
-
-                button.click()
-                app.processEvents()
-                if (
-                    win.selected_generation_id is not None
-                    and getattr(win, "selected_year", None) is not None
-                    and getattr(win, "selected_engine_id", None) is not None
-                ):
-                    return True
+                    button = next(
+                        (b for b in win.findChildren(QPushButton) if b.text() == "CONFIRMĂ VEHICULUL"),
+                        None,
+                    )
+                    if button is None:
+                        continue
+                    button.click()
+                    app.processEvents()
+                    if (
+                        win.selected_generation_id is not None
+                        and getattr(win, "selected_year", None) is not None
+                        and getattr(win, "selected_engine_id", None) is not None
+                    ):
+                        return True
     return False
 
 
@@ -63,15 +60,22 @@ def run_compiled_smoke() -> int:
     win.show()
     app.processEvents()
 
-    assert "2.2.0" in win.windowTitle(), win.windowTitle()
+    assert "2.2.1" in win.windowTitle(), win.windowTitle()
     assert "AI Copilot" in win.windowTitle(), win.windowTitle()
     assert win.stack.count() == 9, f"Expected 9 integrated pages, got {win.stack.count()}"
     assert len(getattr(win, "_workspace_pages", {})) == 8
     assert not getattr(win, "_workspace_windows", {}), "Secondary workspace windows must be disabled"
-    assert _select_real_vehicle(win, app), "Could not select a complete vehicle (year + engine)"
+    assert _select_real_vehicle(win, app), "Could not select a complete vehicle (year + valid engine)"
 
     assert getattr(win, "selected_year", None) is not None
     assert getattr(win, "selected_engine_id", None) is not None
+    valid = win.con.execute(
+        """SELECT 1 FROM vehicle_engines WHERE generation_id=? AND engine_id=?
+           AND (year_from IS NULL OR year_from<=?) AND (year_to IS NULL OR year_to>=?) LIMIT 1""",
+        (win.selected_generation_id, win.selected_engine_id, win.selected_year, win.selected_year),
+    ).fetchone()
+    assert valid, "Selected engine is not valid for the selected year"
+
     strips = getattr(win, "_vehicle_context_strips", {})
     assert len(strips) == 8, f"Expected 8 vehicle context strips, got {len(strips)}"
     assert all(strip._kid_vehicle_state.text() == "SELECTAT" for strip in strips.values())
@@ -88,8 +92,6 @@ def run_compiled_smoke() -> int:
         assert len(page.findChildren(object)) > 5, f"Page {index} appears empty"
         assert strips[index]._kid_vehicle_state.text() == "SELECTAT"
 
-        # Auto-Scan/DTC/procedure/live/module/report pages must expose their real
-        # controls, not an empty top-level shell.
         if index == 1:
             assert any("Auto-Scan" in b.text() for b in page.findChildren(QPushButton))
         elif index == 2:
@@ -98,13 +100,20 @@ def run_compiled_smoke() -> int:
         elif index in (3, 4, 5):
             assert hasattr(page, "table") and hasattr(page, "detail")
             if index == 3:
-                assert page.table.columnCount() == 6
-                assert page.table.horizontalHeaderItem(0).text() == "Status pe mașină"
+                assert page.table.columnCount() == 7
+                assert page.table.horizontalHeaderItem(0).text() == "Status"
+                assert page.table.horizontalHeaderItem(4).text() == "Motor / an"
         elif index == 6:
             assert getattr(win, "live_table", None) is not None
         elif index == 7:
             assert getattr(win, "module_table", None) is not None
-            assert win.module_table.rowCount() > 0
+            assert win.module_table.columnCount() == 6
+            if win.module_table.rowCount():
+                allowed = {"MAPAT GENERAȚIE", "CONFIRMAT PE MAȘINĂ", "CITIT AUTOSCAN • NEMAPAT LOCAL"}
+                statuses = {win.module_table.item(i, 0).text() for i in range(win.module_table.rowCount())}
+                assert statuses.issubset(allowed), statuses
+            else:
+                assert "Auto-Scan" in win.module_table.toolTip()
         elif index == 8:
             assert any("Generează" in b.text() for b in page.findChildren(QPushButton))
 
@@ -128,7 +137,7 @@ def run_compiled_smoke() -> int:
     assert not visible_secondary, f"Unexpected secondary workspaces: {visible_secondary}"
 
     print(
-        "COMPILED V2.2.0 VEHICLE-FIRST NAVIGATION OK",
+        "COMPILED V2.2.1 VEHICLE PRECISION NAVIGATION OK",
         opened,
         "stack=", win.stack.count(),
         "year=", win.selected_year,
