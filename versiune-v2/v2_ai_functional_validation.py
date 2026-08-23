@@ -59,7 +59,7 @@ def main():
     main_v2.prepare_database()
     main_v2.apply_v2_patches()
 
-    from PySide6.QtWidgets import QApplication, QMessageBox, QToolBar, QFrame
+    from PySide6.QtWidgets import QApplication, QMessageBox, QToolBar
     import ui_v2
     import v2_functional_windows_patch as functional
     import v2_pdf_fix_patch as pdf_fix
@@ -89,14 +89,9 @@ def main():
     toolbar = win.findChild(QToolBar, "kidV2AiToolbar")
     assert toolbar is not None, "AI toolbar missing"
 
-    ai_strips = []
-    for index in range(win.stack.count()):
-        page = win.stack.widget(index)
-        strip = page.findChild(QFrame, f"kidAiStrip{index}")
-        assert strip is not None, f"AI strip missing on V2 page {index}"
-        assert strip.isVisible() or page is not win.stack.currentWidget()
-        ai_strips.append(strip)
-    assert len(ai_strips) == 9, len(ai_strips)
+    ai_strips = getattr(win, "v2_ai_strips", {})
+    assert set(ai_strips) == set(range(9)), f"AI strips missing: {sorted(set(range(9)) - set(ai_strips))}"
+    assert ai_strips[0].isVisible(), "Dashboard AI strip is not visible"
 
     assert choose_first_vehicle(win, app), "No selectable vehicle for AI validation"
 
@@ -113,7 +108,8 @@ def main():
 
     win.open_page(1)
     app.processEvents()
-    assert win.stack.currentWidget().findChild(QFrame, "kidAiStrip1").isVisible()
+    assert ai_strips[1].isVisible(), "Auto-Scan AI strip is not visible"
+    assert "AI Copilot" in win.windowTitle()
     win._load_autoscan()
     app.processEvents()
 
@@ -136,6 +132,16 @@ def main():
     assert "Audit AI" in win.autoscan_summary.text()
     assert "RAPORT VCDS VERIFICAT AI" in win.v2_verified_report_text
     assert "Coding ORIGINAL: 0119001203241D082000" in win.v2_verified_report_text
+
+    # All functional areas retain a dedicated AI strip when navigated to.
+    for index in range(2, 9):
+        win.open_page(index)
+        app.processEvents()
+        assert ai_strips[index].isVisible(), f"AI strip not visible on page {index}"
+        assert "AI Copilot" in win.windowTitle()
+
+    win.open_page(1)
+    app.processEvents()
 
     security = win.v2_ai_copilot.ask(
         "Security Access pentru coding Address 01",
