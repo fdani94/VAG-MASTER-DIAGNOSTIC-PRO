@@ -22,6 +22,8 @@ main_v2.prepare_database()
 main_v2.apply_v2_patches()
 
 import ui_v2
+import v2_functional_windows_patch as functional
+from v2_ai_functional_validation import UDS_SAMPLE
 from v2_vehicle_first_patch import VEHICLE_FIRST_VERSION, selected_vehicle_context
 
 
@@ -46,6 +48,9 @@ class VehicleFirstV220Tests(unittest.TestCase):
     def tearDown(self):
         self.window.close()
         self.app.processEvents()
+        temp = ROOT / "_v220_autoscan_refresh_test.txt"
+        if temp.exists():
+            temp.unlink()
 
     def _select_golf_vii(self):
         self.assertTrue(_choose_text(self.window.brand_combo, "Volkswagen"))
@@ -60,6 +65,14 @@ class VehicleFirstV220Tests(unittest.TestCase):
         self.assertIsNotNone(self.window.engine_combo.currentData())
         self.window._select_vehicle()
         self.app.processEvents()
+
+    def _coding_target(self):
+        page = self.window._workspace_pages[3]
+        self.window._load_procedures(page)
+        rows = page.table.property("rows") or []
+        target = next((row for row in rows if str(row["module_address"] or "").strip()), None)
+        self.assertIsNotNone(target)
+        return page, rows, target, str(target["module_address"]).strip()
 
     def test_version_and_full_vehicle_context(self):
         self.assertEqual(VEHICLE_FIRST_VERSION, "2.2.0")
@@ -105,12 +118,7 @@ class VehicleFirstV220Tests(unittest.TestCase):
 
     def test_autoscan_promotes_confirmed_module_and_original_coding(self):
         self._select_golf_vii()
-        page = self.window._workspace_pages[3]
-        self.window._load_procedures(page)
-        rows = page.table.property("rows") or []
-        target = next((row for row in rows if str(row["module_address"] or "").strip()), None)
-        self.assertIsNotNone(target)
-        address = str(target["module_address"]).strip()
+        page, _rows, _target, address = self._coding_target()
         self.window.current_autoscan = SimpleNamespace(
             modules=[
                 SimpleNamespace(
@@ -127,11 +135,10 @@ class VehicleFirstV220Tests(unittest.TestCase):
         self.window._load_procedures(page)
         self.app.processEvents()
         rows = page.table.property("rows") or []
-        confirmed_index = None
-        for index, row in enumerate(rows):
-            if str(row["module_address"] or "").strip().upper() == address.upper():
-                confirmed_index = index
-                break
+        confirmed_index = next(
+            (i for i, row in enumerate(rows) if str(row["module_address"] or "").strip().upper() == address.upper()),
+            None,
+        )
         self.assertIsNotNone(confirmed_index)
         page.table.selectRow(confirmed_index)
         self.window._show_procedure(page)
@@ -142,6 +149,76 @@ class VehicleFirstV220Tests(unittest.TestCase):
         self.assertIn("001122334455", detail)
         self.assertIn("5Q0 937 084", detail)
         self.assertIn("BCM MQBAB", detail)
+
+    def test_vehicle_change_clears_previous_autoscan_evidence(self):
+        self._select_golf_vii()
+        page, _rows, _target, address = self._coding_target()
+        self.window.current_autoscan = SimpleNamespace(
+            modules=[SimpleNamespace(address=address, coding="OLD-CAR-CODING")],
+            faults=[],
+        )
+        self.window.autoscan_plans = [("old", "plan")]
+        self.window.autoscan_correlation = {"old": True}
+        self.window.v2_verified_report_text = "OLD VEHICLE REPORT"
+        self.window._load_procedures(page)
+        self.assertIn(
+            "CONFIRMAT AUTOSCAN",
+            [page.table.item(i, 0).text() for i in range(page.table.rowCount())],
+        )
+
+        # A different year is already a different vehicle context and must
+        # invalidate all Auto-Scan evidence from the old selection.
+        new_year_index = next(
+            (i for i in range(self.window.year_combo.count()) if self.window.year_combo.itemData(i) == 2016),
+            None,
+        )
+        self.assertIsNotNone(new_year_index)
+        self.window.year_combo.setCurrentIndex(new_year_index)
+        self.window._select_vehicle()
+        self.app.processEvents()
+
+        self.assertIsNone(self.window.current_autoscan)
+        self.assertEqual(self.window.autoscan_plans, [])
+        self.assertIsNone(self.window.autoscan_correlation)
+        self.assertEqual(self.window.v2_verified_report_text, "")
+        self.assertIn("neîncărcat", self.window.autoscan_summary.text().lower())
+        statuses = [page.table.item(i, 0).text() for i in range(page.table.rowCount())]
+        self.assertNotIn("CONFIRMAT AUTOSCAN", statuses)
+        self.assertNotIn("OLD-CAR-CODING", page.detail.toPlainText())
+
+    def test_importing_autoscan_refreshes_already_open_coding_page(self):
+        self._select_golf_vii()
+        self.window.open_page(3)
+        self.app.processEvents()
+        page, _rows, _target, address = self._coding_target()
+        self.assertNotIn(
+            "CONFIRMAT AUTOSCAN",
+            [page.table.item(i, 0).text() for i in range(page.table.rowCount())],
+        )
+
+        sample = ROOT / "_v220_autoscan_refresh_test.txt"
+        sample.write_text(UDS_SAMPLE.replace("Address 01:", f"Address {address}:"), encoding="utf-8")
+        original_dialog = functional.QFileDialog.getOpenFileName
+        try:
+            functional.QFileDialog.getOpenFileName = staticmethod(
+                lambda *a, **k: (str(sample), "Text (*.txt)")
+            )
+            self.window._load_autoscan()
+            self.app.processEvents()
+        finally:
+            functional.QFileDialog.getOpenFileName = original_dialog
+
+        self.assertIsNotNone(self.window.current_autoscan)
+        statuses = [page.table.item(i, 0).text() for i in range(page.table.rowCount())]
+        self.assertIn("CONFIRMAT AUTOSCAN", statuses)
+        confirmed_index = statuses.index("CONFIRMAT AUTOSCAN")
+        page.table.selectRow(confirmed_index)
+        self.window._show_procedure(page)
+        detail = page.detail.toPlainText()
+        self.assertIn("CODING ORIGINAL DIN AUTO-SCAN", detail)
+        self.assertIn("0119001203241D082000", detail)
+        self.assertIn("AUTO-SCAN:", self.window._coding_overview._kid_scan_state.text())
+        self.assertIn("CONFIRMATE", self.window._coding_overview._kid_scan_state.text())
 
 
 if __name__ == "__main__":
