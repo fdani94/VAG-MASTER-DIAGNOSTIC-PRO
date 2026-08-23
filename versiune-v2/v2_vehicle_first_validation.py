@@ -32,12 +32,15 @@ def run():
 
     import ui_v2
     from v2_vehicle_first_patch import selected_vehicle_context
+    from v2_vehicle_precision_patch import PRECISION_VERSION
 
     app = QApplication.instance() or QApplication([])
     win = ui_v2.MainWindowV2()
     win.show()
     app.processEvents()
 
+    assert PRECISION_VERSION == "2.2.1"
+    assert "2.2.1" in win.windowTitle()
     assert choose(win.brand_combo, "Volkswagen")
     app.processEvents()
     assert choose(win.model_combo, "Golf")
@@ -45,8 +48,9 @@ def run():
     assert choose(win.gen_combo, "VII 5G/AU")
     app.processEvents()
     assert choose(win.year_combo, "2015")
+    app.processEvents()
     assert win.engine_combo.count() > 1
-    win.engine_combo.setCurrentIndex(1)  # index 0 = Nespecificat
+    win.engine_combo.setCurrentIndex(1)
     assert win.engine_combo.currentData() is not None
     win._select_vehicle()
     app.processEvents()
@@ -58,14 +62,22 @@ def run():
     assert ctx["engine_code"]
     assert len(win._vehicle_context_strips) == 8
 
-    win.grab().save("v2_220_dashboard_vehicle_selected.png")
+    valid_engine = win.con.execute(
+        """SELECT 1 FROM vehicle_engines WHERE generation_id=? AND engine_id=?
+           AND (year_from IS NULL OR year_from<=?) AND (year_to IS NULL OR year_to>=?) LIMIT 1""",
+        (ctx["generation_id"], ctx["engine_id"], ctx["year"], ctx["year"]),
+    ).fetchone()
+    assert valid_engine
+
+    win.grab().save("v2_221_dashboard_vehicle_selected.png")
 
     win.open_page(3)
     app.processEvents()
     page = win._workspace_pages[3]
     rows = page.table.property("rows") or []
     assert rows, "Coding list is empty for selected vehicle"
-    assert page.table.columnCount() == 6
+    assert page.table.columnCount() == 7
+    assert page.table.horizontalHeaderItem(4).text() == "Motor / an"
     assert "Volkswagen Golf" in win._vehicle_context_strips[3]._kid_vehicle_label.text()
 
     target = next((row for row in rows if str(row["module_address"] or "").strip()), None)
@@ -84,6 +96,8 @@ def run():
         ],
         faults=[],
     )
+    win.autoscan_vehicle_binding_ok = True
+    win.autoscan_vehicle_match = {"status": "matched", "matched": True, "reason": "validation fixture"}
     win.refresh_vehicle_context_v220()
     win._load_procedures(page)
     app.processEvents()
@@ -96,19 +110,20 @@ def run():
     app.processEvents()
 
     detail = page.detail.toPlainText()
-    assert page.table.item(confirmed[0], 0).text() == "CONFIRMAT AUTOSCAN"
+    assert page.table.item(confirmed[0], 0).text() in ("MODUL GĂSIT AUTOSCAN", "CONTROLLER CONFIRMAT")
     assert "CODING ORIGINAL DIN AUTO-SCAN" in detail
     assert "A1B2C3D4E5F6" in detail
+    assert "PRECIZIE PENTRU SELECȚIA ACTUALĂ" in detail
     assert "PAȘI DOCUMENTAȚI" in detail
     assert "CUM ȘTII CĂ A REUȘIT" in detail
     assert "SURSĂ" in detail
 
-    win.grab().save("v2_220_coding_explicit.png")
+    win.grab().save("v2_221_coding_explicit.png")
 
     print(
-        "V2.2.0 VEHICLE-FIRST AUDIT OK "
+        "V2.2.1 VEHICLE PRECISION AUDIT OK "
         f"vehicle={ctx['brand']} {ctx['model']} {ctx['generation']} {ctx['year']} {ctx['engine_code']} "
-        f"coding_rows={len(rows)} confirmed_module={addr} context_strips={len(win._vehicle_context_strips)}"
+        f"coding_rows={len(rows)} module={addr} context_strips={len(win._vehicle_context_strips)}"
     )
     win.close()
     app.processEvents()

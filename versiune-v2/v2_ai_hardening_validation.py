@@ -14,31 +14,31 @@ import main_v2
 
 
 def choose_first_vehicle(win, app):
-    """Choose a complete V2.2.0 vehicle context, including a real engine."""
+    """Choose a complete V2.2.1 vehicle context, including a year-valid engine."""
     for bi in range(1, win.brand_combo.count()):
         win.brand_combo.setCurrentIndex(bi)
         app.processEvents()
         for mi in range(1, win.model_combo.count()):
             win.model_combo.setCurrentIndex(mi)
             app.processEvents()
-            if win.gen_combo.count() <= 1:
-                continue
-            win.gen_combo.setCurrentIndex(1)
-            app.processEvents()
-            if win.year_combo.count():
-                win.year_combo.setCurrentIndex(0)
-            if win.engine_combo.count() <= 1:
-                continue
-            win.engine_combo.setCurrentIndex(1)  # 0 = Nespecificat
-            app.processEvents()
-            if win.engine_combo.currentData() is None:
-                continue
-            win._select_vehicle()
-            app.processEvents()
-            return (
-                win.selected_generation_id is not None
-                and getattr(win, "selected_engine_id", None) is not None
-            )
+            for gi in range(1, win.gen_combo.count()):
+                win.gen_combo.setCurrentIndex(gi)
+                app.processEvents()
+                for yi in range(win.year_combo.count()):
+                    win.year_combo.setCurrentIndex(yi)
+                    app.processEvents()
+                    if win.engine_combo.count() <= 1:
+                        continue
+                    win.engine_combo.setCurrentIndex(1)
+                    app.processEvents()
+                    if win.engine_combo.currentData() is None:
+                        continue
+                    win._select_vehicle()
+                    app.processEvents()
+                    return (
+                        win.selected_generation_id is not None
+                        and getattr(win, "selected_engine_id", None) is not None
+                    )
     return False
 
 
@@ -69,6 +69,7 @@ def main():
     import ui_v2
     from v2_ai_hardening_patch import HARDENING_VERSION, active_page_context
     from v2_vehicle_first_patch import VEHICLE_FIRST_VERSION
+    from v2_vehicle_precision_patch import PRECISION_VERSION
 
     app = QApplication.instance() or QApplication([])
     QMessageBox.warning = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Ok)
@@ -80,11 +81,10 @@ def main():
     win.show()
     app.processEvents()
 
-    # Application shell is V2.2.0; the AI hardening component keeps its own
-    # 2.1.2 revision marker so safety regressions remain independently traceable.
     assert VEHICLE_FIRST_VERSION == "2.2.0"
+    assert PRECISION_VERSION == "2.2.1"
     assert HARDENING_VERSION == "2.1.2"
-    assert "2.2.0" in win.windowTitle(), win.windowTitle()
+    assert "2.2.1" in win.windowTitle(), win.windowTitle()
     assert "AI Copilot" in win.windowTitle(), win.windowTitle()
     assert getattr(win.__class__, "_kid_v2_ai_hardening_applied", False)
     assert getattr(win.__class__, "_kid_v2_ai_shutdown_applied", False)
@@ -92,7 +92,7 @@ def main():
     assert toolbar is not None and toolbar.isVisible()
     assert len(getattr(win, "v2_ai_strips", {})) == 9
     assert win._responsive_dashboard.findChild(QFrame, "kidAiStrip0") is not None
-    assert win.grab().save(str(ROOT / "v2_ai_212_dashboard.png"), "PNG")
+    assert win.grab().save(str(ROOT / "v2_ai_221_dashboard.png"), "PNG")
 
     assert choose_first_vehicle(win, app)
     assert getattr(win, "selected_engine_id", None) is not None
@@ -111,7 +111,7 @@ def main():
     assert "P0299" in context, context
     assert win._workspace_pages[2].findChild(QFrame, "kidAiStrip2") is not None
     assert win._vehicle_context_strips[2]._kid_vehicle_state.text() == "SELECTAT"
-    assert win.grab().save(str(ROOT / "v2_ai_212_dtc_context.png"), "PNG")
+    assert win.grab().save(str(ROOT / "v2_ai_221_dtc_context.png"), "PNG")
 
     win.open_v2_ai_copilot()
     app.processEvents()
@@ -119,14 +119,12 @@ def main():
     assert dialog is not None and dialog.isVisible()
     assert HARDENING_VERSION in dialog.windowTitle()
 
-    # Rich-text injection regression: user/model text must remain literal text.
     dialog._append("TU", "<b>NU TREBUIE INTERPRETAT</b> & <img src='x'>")
     plain = dialog.transcript.toPlainText()
     assert "<b>NU TREBUIE INTERPRETAT</b>" in plain, plain
     assert "<img src='x'>" in plain, plain
-    assert dialog.grab().save(str(ROOT / "v2_ai_212_chat.png"), "PNG")
+    assert dialog.grab().save(str(ROOT / "v2_ai_221_chat.png"), "PNG")
 
-    # QThread lifetime regression 1: close CHAT while response is running.
     win.v2_ai_copilot = SlowLocalCopilot()
     dialog.send("test thread chat close")
     app.processEvents()
@@ -152,7 +150,6 @@ def main():
         "Dialog should delete only after QThread.finished"
     )
 
-    # QThread lifetime regression 2: close MAIN APP while AI is running.
     win.open_v2_ai_copilot()
     app.processEvents()
     dialog2 = win.v2_ai_dialog
@@ -179,7 +176,8 @@ def main():
 
     print(
         "V2 AI HARDENING AUDIT OK",
-        f"app_version={VEHICLE_FIRST_VERSION}",
+        f"app_version={PRECISION_VERSION}",
+        f"vehicle_first={VEHICLE_FIRST_VERSION}",
         f"ai_hardening={HARDENING_VERSION}",
         "html_escape=ok",
         "chat_thread_lifecycle=ok",
