@@ -68,7 +68,7 @@ jobs:
             versiune-v2/test_v2_vehicle_first.py versiune-v2/test_v2_vehicle_precision.py `
             versiune-v2/v2_ai_functional_validation.py versiune-v2/v2_ai_hardening_validation.py `
             versiune-v2/v2_vehicle_first_validation.py versiune-v2/v2_final_validation_221.py `
-            versiune-v2/v2_compiled_smoke.py
+            versiune-v2/v2_native_visual_validation.py versiune-v2/v2_compiled_smoke.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Auto-Scan parser regressions
@@ -109,6 +109,13 @@ jobs:
           python versiune-v2/v2_vehicle_first_validation.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python versiune-v2/v2_final_validation_221.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Native Windows font and visual audit
+        shell: powershell
+        run: |
+          Remove-Item Env:QT_QPA_PLATFORM -ErrorAction SilentlyContinue
+          python versiune-v2/v2_native_visual_validation.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Create KID Diagnostic V2 icon
