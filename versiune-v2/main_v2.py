@@ -103,9 +103,10 @@ def apply_v2_patches():
     from v2_functional_windows_patch import apply as p7
     from v2_pdf_fix_patch import apply as p8
     from v2_integrated_navigation_patch import apply as p9
-    from v2_ai_ui_patch import apply as p10
-    from v2_ai_pdf_patch import apply as p11
-    p1(); p2(); p3(); p4(); p5(); p6(); p7(); p8(); p9(); p10(); p11()
+    from v2_ai_parser_bridge import apply as p10
+    from v2_ai_ui_patch import apply as p11
+    from v2_ai_pdf_patch import apply as p12
+    p1(); p2(); p3(); p4(); p5(); p6(); p7(); p8(); p9(); p10(); p11(); p12()
 
 
 if __name__ == "__main__":
