@@ -23,7 +23,7 @@ main_v2.apply_v2_patches()
 import ui_v2
 import v2_functional_windows_patch as functional
 import v2_vehicle_first_patch as vf
-from v2_vehicle_precision_patch import PRECISION_VERSION, scan_vehicle_match
+from v2_vehicle_precision_patch import PRECISION_VERSION
 
 
 SCAN_TEMPLATE = """VCDS -- Windows Based VAG/VAS Emulator
@@ -131,26 +131,41 @@ class VehiclePrecisionV221Tests(unittest.TestCase):
         }
         self.assertTrue(displayed.issubset(all_for_generation))
 
-    def test_modules_page_uses_generation_mapping_not_entire_catalog(self):
-        row = self.window.con.execute(
+    def test_modules_page_never_falls_back_to_entire_catalog(self):
+        total = self.window.con.execute("SELECT COUNT(*) FROM modules").fetchone()[0]
+        mapped = self.window.con.execute(
             """SELECT generation_id,COUNT(*) c FROM generation_modules
                GROUP BY generation_id HAVING COUNT(*)>0 ORDER BY COUNT(*) DESC LIMIT 1"""
         ).fetchone()
-        self.assertIsNotNone(row)
-        total = self.window.con.execute("SELECT COUNT(*) FROM modules").fetchone()[0]
-        self.window.selected_generation_id = row["generation_id"]
+
+        if mapped is not None:
+            self.window.selected_generation_id = mapped["generation_id"]
+            expected_count = mapped["c"]
+        else:
+            # The current V2 database has no verified generation_modules map.
+            # Precision behavior is intentionally an empty list until a matching
+            # Auto-Scan provides real installed controllers.
+            generation = self.window.con.execute("SELECT id FROM generations ORDER BY id LIMIT 1").fetchone()
+            self.assertIsNotNone(generation)
+            self.window.selected_generation_id = generation["id"]
+            expected_count = 0
+
         self.window.autoscan_vehicle_binding_ok = False
         self.window.current_autoscan = None
         self.window._load_modules()
         self.app.processEvents()
-        self.assertEqual(self.window.module_table.rowCount(), row["c"])
-        if row["c"] < total:
-            self.assertLess(self.window.module_table.rowCount(), total)
-        statuses = [
-            self.window.module_table.item(i, 0).text()
-            for i in range(self.window.module_table.rowCount())
-        ]
-        self.assertTrue(all(status == "MAPAT GENERAȚIE" for status in statuses))
+        self.assertEqual(self.window.module_table.rowCount(), expected_count)
+        self.assertLess(self.window.module_table.rowCount(), total)
+
+        if expected_count:
+            statuses = [
+                self.window.module_table.item(i, 0).text()
+                for i in range(self.window.module_table.rowCount())
+            ]
+            self.assertTrue(all(status == "MAPAT GENERAȚIE" for status in statuses))
+        else:
+            self.assertIn("Auto-Scan", self.window.module_table.toolTip())
+            self.assertIn("hartă locală", self.window.module_table.toolTip())
 
     def test_mismatched_chassis_scan_is_rejected_for_selected_vehicle(self):
         self._select_golf_vii(2015)
