@@ -33,6 +33,7 @@ jobs:
         shell: powershell
         run: |
           python -m py_compile `
+            versiune-v2/v2_runtime_db.py `
             versiune-v2/v2_ai_copilot.py `
             versiune-v2/v2_ai_parser_bridge.py `
             versiune-v2/v2_ai_ui_patch.py `
@@ -47,7 +48,7 @@ jobs:
           python versiune-v2/test_v2_ai_copilot.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Run AI UI Auto-Scan and PDF validation
+      - name: Run startup-lock UI Auto-Scan and PDF validation
         shell: powershell
         env:
           QT_QPA_PLATFORM: offscreen
