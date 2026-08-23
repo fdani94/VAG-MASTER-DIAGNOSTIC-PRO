@@ -55,8 +55,9 @@ class VehicleFirstV220Tests(unittest.TestCase):
         self.assertTrue(_choose_text(self.window.gen_combo, "VII 5G/AU"))
         self.app.processEvents()
         self.assertTrue(_choose_text(self.window.year_combo, "2015"))
-        self.assertGreater(self.window.engine_combo.count(), 0)
-        self.window.engine_combo.setCurrentIndex(0)
+        self.assertGreater(self.window.engine_combo.count(), 1)
+        self.window.engine_combo.setCurrentIndex(1)  # index 0 = Nespecificat
+        self.assertIsNotNone(self.window.engine_combo.currentData())
         self.window._select_vehicle()
         self.app.processEvents()
 
