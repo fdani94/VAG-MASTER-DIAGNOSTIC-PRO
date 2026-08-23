@@ -1,0 +1,56 @@
+name: KID Diagnostic V2 AI Functional
+
+on:
+  pull_request:
+    branches:
+      - codex/v2-final-validation
+
+concurrency:
+  group: kid-v2-ai-functional-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  functional-ai:
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        shell: powershell
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Compile AI integration
+        shell: powershell
+        run: |
+          python -m py_compile `
+            versiune-v2/v2_ai_copilot.py `
+            versiune-v2/v2_ai_parser_bridge.py `
+            versiune-v2/v2_ai_ui_patch.py `
+            versiune-v2/v2_ai_pdf_patch.py `
+            versiune-v2/test_v2_ai_copilot.py `
+            versiune-v2/v2_ai_functional_validation.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run AI unit regressions
+        shell: powershell
+        run: |
+          python versiune-v2/test_v2_ai_copilot.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run AI UI Auto-Scan and PDF validation
+        shell: powershell
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python versiune-v2/v2_ai_functional_validation.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
