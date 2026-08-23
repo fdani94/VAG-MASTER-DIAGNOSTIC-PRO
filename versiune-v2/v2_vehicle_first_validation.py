@@ -45,8 +45,9 @@ def run():
     assert choose(win.gen_combo, "VII 5G/AU")
     app.processEvents()
     assert choose(win.year_combo, "2015")
-    assert win.engine_combo.count() > 0
-    win.engine_combo.setCurrentIndex(0)
+    assert win.engine_combo.count() > 1
+    win.engine_combo.setCurrentIndex(1)  # index 0 = Nespecificat
+    assert win.engine_combo.currentData() is not None
     win._select_vehicle()
     app.processEvents()
 
