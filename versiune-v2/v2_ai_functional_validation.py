@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -38,33 +39,32 @@ Readiness: 0 0 0 0 1
 
 
 def choose_first_vehicle(win, app):
-    """Choose a complete vehicle context: generation + year + a real engine."""
+    """Choose a complete vehicle context: generation + year + a real year-valid engine."""
     for bi in range(1, win.brand_combo.count()):
         win.brand_combo.setCurrentIndex(bi)
         app.processEvents()
         for mi in range(1, win.model_combo.count()):
             win.model_combo.setCurrentIndex(mi)
             app.processEvents()
-            if win.gen_combo.count() <= 1:
-                continue
-            win.gen_combo.setCurrentIndex(1)
-            app.processEvents()
-            if win.year_combo.count():
+            for gi in range(1, win.gen_combo.count()):
+                win.gen_combo.setCurrentIndex(gi)
+                app.processEvents()
+                if not win.year_combo.count():
+                    continue
                 win.year_combo.setCurrentIndex(0)
-            # V2.2.0 reserves index 0 for "Nespecificat". A vehicle-specific
-            # coding context is valid only when a real engine is selected.
-            if win.engine_combo.count() <= 1:
-                continue
-            win.engine_combo.setCurrentIndex(1)
-            app.processEvents()
-            if win.engine_combo.currentData() is None:
-                continue
-            win._select_vehicle()
-            app.processEvents()
-            return (
-                win.selected_generation_id is not None
-                and getattr(win, "selected_engine_id", None) is not None
-            )
+                app.processEvents()
+                if win.engine_combo.count() <= 1:
+                    continue
+                win.engine_combo.setCurrentIndex(1)
+                app.processEvents()
+                if win.engine_combo.currentData() is None:
+                    continue
+                win._select_vehicle()
+                app.processEvents()
+                return (
+                    win.selected_generation_id is not None
+                    and getattr(win, "selected_engine_id", None) is not None
+                )
     return False
 
 
@@ -76,11 +76,11 @@ def main():
     import ui_v2
     import v2_functional_windows_patch as functional
     import v2_pdf_fix_patch as pdf_fix
-    from v2_vehicle_first_patch import VEHICLE_FIRST_VERSION
+    from v2_vehicle_first_patch import VEHICLE_FIRST_VERSION, selected_vehicle_context
+    from v2_vehicle_precision_patch import PRECISION_VERSION
     from v2_ai_hardening_patch import HARDENING_VERSION
     from pypdf import PdfReader
 
-    # V2 must use a dedicated writable DB, not the legacy VAG MASTER database.
     db_path = Path(main_v2.appdb.DB_PATH)
     assert db_path.name == "kid_diagnostic_v2.db", db_path
     assert "KID Diagnostic V2" in str(db_path.parent), db_path
@@ -94,15 +94,14 @@ def main():
     win.show()
     app.processEvents()
 
-    # Re-run database preparation while the application's live connection is open.
-    # This reproduces the real-world condition that previously raised "database is locked".
     main_v2.prepare_database()
 
     assert hasattr(win, "v2_ai_copilot")
     assert "AI Copilot" in win.windowTitle()
-    assert VEHICLE_FIRST_VERSION == "2.2.0"
-    assert "2.2.0" in win.windowTitle()
-    assert HARDENING_VERSION == "2.1.2"  # AI safety layer component revision.
+    assert VEHICLE_FIRST_VERSION == "2.2.0"  # vehicle-first component revision
+    assert PRECISION_VERSION == "2.2.1"      # application precision release
+    assert "2.2.1" in win.windowTitle()
+    assert HARDENING_VERSION == "2.1.2"
     toolbar = win.findChild(QToolBar, "kidV2AiToolbar")
     assert toolbar is not None, "AI toolbar missing"
 
@@ -114,8 +113,16 @@ def main():
     assert getattr(win, "selected_engine_id", None) is not None
     assert len(getattr(win, "_vehicle_context_strips", {})) == 8
 
+    ctx = selected_vehicle_context(win)
+    chassis_codes = re.findall(r"[A-Z0-9]{2,5}", str(ctx.get("chassis") or "").upper())
+    assert chassis_codes, ctx
+    selected_chassis = chassis_codes[0]
+
     sample = ROOT / "sample_v2_ai_uds.txt"
-    sample.write_text(UDS_SAMPLE, encoding="utf-8")
+    sample.write_text(
+        UDS_SAMPLE.replace("Chassis Type: 3C", f"Chassis Type: {selected_chassis}"),
+        encoding="utf-8",
+    )
     output_pdf = ROOT / "KID_Diagnostic_V2_AI_TEST.pdf"
 
     functional.QFileDialog.getOpenFileName = staticmethod(
@@ -134,6 +141,8 @@ def main():
 
     scan = win.current_autoscan
     assert scan is not None
+    assert win.autoscan_vehicle_binding_ok, win.autoscan_vehicle_match
+    assert win.autoscan_vehicle_match["status"] == "matched"
     assert getattr(scan, "audit", None), "AI audit missing from loaded scan"
     assert scan.audit["score"] >= 90, scan.audit
     assert scan.audit["verified"], scan.audit
@@ -149,15 +158,14 @@ def main():
     assert getattr(module, "part_no_hw", "") == "04L 907 445"
     assert module.coding == "0119001203241D082000"
     assert "Audit AI" in win.autoscan_summary.text()
+    assert "VEHICUL CONFIRMAT CHASSIS" in win.autoscan_summary.text()
     assert "RAPORT VCDS VERIFICAT AI" in win.v2_verified_report_text
     assert "Coding ORIGINAL: 0119001203241D082000" in win.v2_verified_report_text
 
-    # All functional areas retain both the vehicle context and the AI strip.
     for index in range(2, 9):
         win.open_page(index)
         app.processEvents()
         assert ai_strips[index].isVisible(), f"AI strip not visible on page {index}"
-        assert "AI Copilot" in win.windowTitle()
         vehicle_strip = win._vehicle_context_strips[index]
         assert vehicle_strip._kid_vehicle_state.text() == "SELECTAT"
         assert win.vehicle_badge.text() in vehicle_strip._kid_vehicle_label.text()
@@ -188,7 +196,6 @@ def main():
     win.open_v2_ai_copilot()
     app.processEvents()
     assert win.v2_ai_dialog is not None and win.v2_ai_dialog.isVisible()
-    # Copilot component keeps its own hardening revision; the application shell is 2.2.0.
     assert HARDENING_VERSION in win.v2_ai_dialog.windowTitle()
     win.v2_ai_dialog.close()
     app.processEvents()
@@ -204,7 +211,8 @@ def main():
 
     print(
         "V2 AI FUNCTIONAL AUDIT OK",
-        f"app_version={VEHICLE_FIRST_VERSION}",
+        f"app_version={PRECISION_VERSION}",
+        f"vehicle_first={VEHICLE_FIRST_VERSION}",
         f"ai_hardening={HARDENING_VERSION}",
         f"db={db_path}",
         f"ai_strips={len(ai_strips)}",
