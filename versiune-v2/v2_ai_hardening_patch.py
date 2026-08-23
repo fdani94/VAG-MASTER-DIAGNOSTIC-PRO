@@ -85,8 +85,7 @@ def _row_context(table):
 def _detail_context(widget):
     if widget is None or not hasattr(widget, "toPlainText"):
         return ""
-    text = _clip(widget.toPlainText(), 1600)
-    return text
+    return _clip(widget.toPlainText(), 1600)
 
 
 def active_page_context(owner):
@@ -216,7 +215,6 @@ def apply():
     ai_core.COPILOT_VERSION = HARDENING_VERSION
     ai_ui.AI_UI_VERSION = HARDENING_VERSION
 
-    original_ai_ask = ai_core.V2AICopilot.ask
     original_dialog_init = ai_ui.CopilotDialog.__init__
     original_main_init = cls.__init__
     original_open_page = cls.open_page
@@ -301,26 +299,32 @@ def apply():
         )
         self._workers.append(worker)
 
-        def done(answer, w=worker):
+        def answer_received(answer, w=worker):
+            # Do not remove/delete the QThread here. answered is emitted from
+            # inside run(), therefore the thread can still report isRunning().
             self._append("AI", answer)
+            w._kid_answer_received = True
+
+        def thread_finished(w=worker):
             if w in self._workers:
                 self._workers.remove(w)
             w.deleteLater()
             if not any(x.isRunning() for x in self._workers):
                 set_busy(self, False)
-                self.input.setFocus()
+                if self.isVisible():
+                    self.input.setFocus()
                 if getattr(self, "_close_when_idle", False):
                     self._close_when_idle = False
                     self.close()
 
-        worker.answered.connect(done)
+        worker.answered.connect(answer_received)
+        worker.finished.connect(thread_finished)
         worker.start()
 
     def close_event_hardened(self, event):
         if any(worker.isRunning() for worker in getattr(self, "_workers", [])):
-            # Hiding instead of deleting keeps the QThread Python/Qt object alive
-            # until its response is delivered. This prevents the classic
-            # "QThread: Destroyed while thread is still running" crash.
+            # Hiding instead of deleting keeps both the dialog and worker alive
+            # until QThread.finished, not merely until the answer signal arrives.
             self._close_when_idle = True
             self.hide()
             event.ignore()
