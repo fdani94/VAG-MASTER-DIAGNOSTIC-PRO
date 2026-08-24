@@ -2,6 +2,7 @@ from __future__ import annotations
 
 TITLE_VERSION = "2.3.0"
 PRECISION_COMPONENT_VERSION = "2.2.1"
+LAYOUT_COMPONENT_VERSION = "2.2.2"
 
 
 def apply():
@@ -24,14 +25,19 @@ def apply():
                 area = "Workspace"
         else:
             area = "Dashboard"
-        return f"KID Diagnostic V2 • {area} • Coding Recovery • AI Copilot • v{TITLE_VERSION}"
+        return (
+            f"KID Diagnostic V2 • {area} • Coding Recovery • "
+            f"layout {LAYOUT_COMPONENT_VERSION} • precision {PRECISION_COMPONENT_VERSION} • "
+            f"AI Copilot • v{TITLE_VERSION}"
+        )
 
     def init_title(self, *args, **kwargs):
         previous_init(self, *args, **kwargs)
         self.setWindowTitle(_title(0))
         try:
             self.statusBar().showMessage(
-                f"KID Diagnostic V2 v{TITLE_VERSION} • Coding Recovery • layout aerisit • precision {PRECISION_COMPONENT_VERSION} • AI Copilot"
+                f"KID Diagnostic V2 v{TITLE_VERSION} • Coding Recovery • layout {LAYOUT_COMPONENT_VERSION} • "
+                f"precision {PRECISION_COMPONENT_VERSION} • AI Copilot"
             )
         except Exception:
             pass
@@ -58,4 +64,4 @@ def apply():
     cls._kid_230_title_applied = True
 
 
-__all__ = ["TITLE_VERSION", "PRECISION_COMPONENT_VERSION", "apply"]
+__all__ = ["TITLE_VERSION", "PRECISION_COMPONENT_VERSION", "LAYOUT_COMPONENT_VERSION", "apply"]
