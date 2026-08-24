@@ -1,48 +1,59 @@
 """Smoke test executed from the packaged Windows EXE.
 
 It targets packaged navigation plus the V2.3.0 precision, breathing-layout and
-module-replacement Coding Recovery invariants.
+module-replacement Coding Recovery invariants. The vehicle selection is
+intentionally deterministic so a missing UI label cannot turn the smoke test
+into an exhaustive catalog walk.
 """
 from __future__ import annotations
 
+import os
+import threading
+
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QMessageBox, QPushButton, QSplitter
+from PySide6.QtWidgets import QApplication, QFrame, QMessageBox, QPushButton, QSplitter
+
+
+def _choose_text(combo, text):
+    needle = str(text).lower()
+    for index in range(combo.count()):
+        if needle in combo.itemText(index).lower():
+            combo.setCurrentIndex(index)
+            return True
+    return False
 
 
 def _select_real_vehicle(win, app):
-    for brand_index in range(1, win.brand_combo.count()):
-        win.brand_combo.setCurrentIndex(brand_index)
-        app.processEvents()
-        for model_index in range(1, win.model_combo.count()):
-            win.model_combo.setCurrentIndex(model_index)
-            app.processEvents()
-            for generation_index in range(1, win.gen_combo.count()):
-                win.gen_combo.setCurrentIndex(generation_index)
-                app.processEvents()
-                for year_index in range(win.year_combo.count()):
-                    win.year_combo.setCurrentIndex(year_index)
-                    app.processEvents()
-                    if win.engine_combo.count() <= 1:
-                        continue
-                    win.engine_combo.setCurrentIndex(1)
-                    app.processEvents()
-                    if win.engine_combo.currentData() is None:
-                        continue
-                    button = next(
-                        (b for b in win.findChildren(QPushButton) if b.text() == "CONFIRMĂ VEHICULUL"),
-                        None,
-                    )
-                    if button is None:
-                        continue
-                    button.click()
-                    app.processEvents()
-                    if (
-                        win.selected_generation_id is not None
-                        and getattr(win, "selected_year", None) is not None
-                        and getattr(win, "selected_engine_id", None) is not None
-                    ):
-                        return True
-    return False
+    """Select the known Golf VII validation target without scanning the catalog."""
+    if not _choose_text(win.brand_combo, "Volkswagen"):
+        return False
+    app.processEvents()
+    if not _choose_text(win.model_combo, "Golf"):
+        return False
+    app.processEvents()
+    if not _choose_text(win.gen_combo, "VII 5G/AU"):
+        return False
+    app.processEvents()
+    if not _choose_text(win.year_combo, "2015"):
+        return False
+    app.processEvents()
+    if win.engine_combo.count() <= 1:
+        return False
+    win.engine_combo.setCurrentIndex(1)
+    app.processEvents()
+    if win.engine_combo.currentData() is None:
+        return False
+
+    # Exercise the actual V2 selection handler directly. Other regressions cover
+    # the visible confirmation button; smoke must validate the packaged runtime
+    # without depending on translated button text.
+    win._select_vehicle()
+    app.processEvents()
+    return bool(
+        win.selected_generation_id is not None
+        and getattr(win, "selected_year", None) is not None
+        and getattr(win, "selected_engine_id", None) is not None
+    )
 
 
 def _exercise_coding_recovery(win, app):
@@ -75,10 +86,18 @@ Coding: 0000000000000000
 def run_compiled_smoke() -> int:
     import ui_v2
 
+    # A smoke test must never occupy a CI runner indefinitely. If a future UI
+    # regression blocks on a modal/event, terminate with a non-zero code so the
+    # workflow reports a failure instead of being cancelled an hour later.
+    watchdog = threading.Timer(120.0, lambda: os._exit(124))
+    watchdog.daemon = True
+    watchdog.start()
+
     app = QApplication.instance() or QApplication([])
     QMessageBox.warning = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Ok)
     QMessageBox.information = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Ok)
     QMessageBox.critical = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Ok)
+    QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes)
 
     win = ui_v2.MainWindowV2()
     win.resize(1200, 760)
@@ -96,9 +115,9 @@ def run_compiled_smoke() -> int:
     assert not getattr(win, "_workspace_windows", {}), "Secondary workspace windows must be disabled"
 
     _exercise_coding_recovery(win, app)
-    assert _select_real_vehicle(win, app), "Could not select a complete vehicle (year + valid engine)"
+    assert _select_real_vehicle(win, app), "Could not select Golf VII 2015 with a valid engine"
 
-    assert getattr(win, "selected_year", None) is not None
+    assert getattr(win, "selected_year", None) == 2015
     assert getattr(win, "selected_engine_id", None) is not None
     valid = win.con.execute(
         """SELECT 1 FROM vehicle_engines WHERE generation_id=? AND engine_id=?
@@ -189,4 +208,5 @@ def run_compiled_smoke() -> int:
     )
     win.close()
     app.processEvents()
+    watchdog.cancel()
     return 0
