@@ -57,7 +57,8 @@ def main() -> int:
     app.processEvents()
     _select_vehicle(win, app)
 
-    assert "2.2.2" in win.windowTitle(), win.windowTitle()
+    assert "2.3.0" in win.windowTitle(), win.windowTitle()
+    assert "Coding Recovery" in win.windowTitle(), win.windowTitle()
     assert getattr(win, "_kid_layout_breathing_applied", False)
 
     strips = getattr(win, "_vehicle_context_strips", {})
@@ -123,7 +124,7 @@ def main() -> int:
     assert coding.detail.font().pointSize() >= 9 or coding.detail.document().documentMargin() >= 12
 
     print(
-        "V2.2.2 LAYOUT BREATHING AUDIT OK",
+        "V2.2.2 LAYOUT COMPONENT AUDIT OK UNDER V2.3.0",
         f"vehicle={win.vehicle_badge.text()}",
         f"coding_rows={coding.table.rowCount()}",
         "small=vertical",
