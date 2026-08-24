@@ -101,7 +101,8 @@ class VehiclePrecisionV221Tests(unittest.TestCase):
 
     def test_release_and_title_are_221(self):
         self.assertEqual(PRECISION_VERSION, "2.2.1")
-        self.assertIn("2.2.1", self.window.windowTitle())
+        self.assertIn("2.3.0", self.window.windowTitle())
+        self.assertIn("Coding Recovery", self.window.windowTitle())
 
     def test_engine_dropdown_obeys_vehicle_engine_year_ranges(self):
         self._select_golf_vii(2015)
@@ -142,9 +143,6 @@ class VehiclePrecisionV221Tests(unittest.TestCase):
             self.window.selected_generation_id = mapped["generation_id"]
             expected_count = mapped["c"]
         else:
-            # The current V2 database has no verified generation_modules map.
-            # Precision behavior is intentionally an empty list until a matching
-            # Auto-Scan provides real installed controllers.
             generation = self.window.con.execute("SELECT id FROM generations ORDER BY id LIMIT 1").fetchone()
             self.assertIsNotNone(generation)
             self.window.selected_generation_id = generation["id"]
