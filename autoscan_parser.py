@@ -3,7 +3,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
-MODULE_RE = re.compile(r"^(?:Address\s+)?(?P<address>[0-9A-F]{2})[:\-]\s*(?P<name>[^\r\n]+)", re.I)
+# Module headers may be written as ``Address 01: Engine`` or as the compact
+# Auto-Scan summary form ``01-Engine -- Status: ...``.  K-Line fault details
+# also contain lines such as ``07-10 - Signal too Low`` / ``49-10 - No
+# Communications``; the negative look-ahead prevents those sub-status bytes
+# from being misclassified as controller addresses.
+MODULE_RE = re.compile(r"^(?:Address\s+)?(?P<address>[0-9A-F]{2})[:\-]\s*(?!\d{1,3}\s*-)(?P<name>[^\r\n]+)", re.I)
 MODULE_ALT_RE = re.compile(r"^Address\s+(?P<address>[0-9A-F]{2})\s*:\s*(?P<name>.+)$", re.I)
 DTC_P_RE = re.compile(r"\b([PBCU][0-9A-F]{4})\b", re.I)
 DTC_VAG_RE = re.compile(r"^\s*(\d{5})\s*-\s*(.+)$")
@@ -262,103 +267,64 @@ def parse_autoscan_text(text, source_path=""):
             current_lines.append(line)
     finish_module()
     result.modules = modules
-
-    if not result.faults:
-        chunks = re.split(r"\n\s*\n", text)
-        for chunk in chunks:
-            if DTC_P_RE.search(chunk) or DTC_VAG_RE.match(chunk.strip()):
-                f = _fault_from_block(chunk, "", "Necunoscut")
-                if f and f.key not in {x.key for x in result.faults}:
-                    result.faults.append(f)
     return _validate_result(result)
 
 
 def parse_autoscan_file(path):
-    return parse_autoscan_text(read_scan_file(path), path)
+    return parse_autoscan_text(read_scan_file(path), str(path))
 
 
-def normalize_code(code):
-    if not code:
-        return ""
-    code = code.strip().upper()
-    m = DTC_P_RE.search(code)
-    if m:
-        return m.group(1).upper()
-    d = re.search(r"\b\d{5,6}\b", code)
-    return d.group(0) if d else code
-
-
-def lookup_dtc(con, fault):
+def _lookup_dtc(con, fault):
     candidates = []
-    for x in (fault.code, fault.vag_code):
-        x = normalize_code(x)
-        if x and x not in candidates:
-            candidates.append(x)
+    if fault.code:
+        candidates.append(fault.code.upper())
+    if fault.vag_code:
+        candidates.append(fault.vag_code)
     for code in candidates:
-        row = con.execute("SELECT * FROM dtcs WHERE UPPER(code)=?", (code.upper(),)).fetchone()
-        if row:
-            return row
-    for code in candidates:
-        row = con.execute("SELECT * FROM dtcs WHERE UPPER(title) LIKE ? OR UPPER(description) LIKE ? LIMIT 1", (f"%{code}%", f"%{code}%")).fetchone()
+        row = con.execute("SELECT * FROM dtcs WHERE upper(code)=upper(?) LIMIT 1", (code,)).fetchone()
         if row:
             return row
     return None
 
 
 def diagnostic_plan(con, fault, generation_id=None, engine_id=None):
-    row = lookup_dtc(con, fault)
-    base = {
-        "found": bool(row),
-        "code": fault.code or fault.vag_code,
-        "module": f"{fault.module_address} {fault.module_name}".strip(),
-        "scan_title": fault.title,
-        "status": fault.status or "Nespecificat în raport",
-        "freeze_frame": fault.freeze_frame or fault.raw_block,
-    }
+    row = _lookup_dtc(con, fault)
     if row:
-        keys = set(row.keys())
-        def g(key, default=""):
-            return row[key] if key in keys and row[key] else default
-        base.update({
-            "title": g("title", fault.title),
-            "description": g("description", ""),
-            "symptoms": g("symptoms", ""),
-            "causes": g("causes", ""),
-            "component": g("component", "Confirmă piesa după cod motor și controller."),
-            "location": g("component_location", "Locația exactă diferă după model/motor; confirmă după cod motor."),
-            "parameters": g("vcds_parameters", "Folosește Advanced Measuring Values și caută parametrul aferent sistemului."),
-            "expected": g("expected_values", "Compară valoarea actuală cu specified/target și cu limitele controllerului."),
-            "test_path": g("test_path", "Intră în modulul indicat de Auto-Scan și verifică Fault Codes + Advanced Measuring Values."),
-            "diagnosis": g("diagnosis", ""),
-            "repair": g("repair", ""),
-            "replacement": g("replacement_steps", "După confirmarea defectului, urmează manualul de reparație pentru demontare/montare."),
-            "severity": g("severity", "Mediu"),
-            "verified": bool(g("verified", 0)),
-        })
-    else:
-        base.update({
-            "title": fault.title or "DTC neindexat încă",
-            "description": "Codul a fost extras din Auto-Scan, dar nu are încă o fișă completă în baza locală.",
-            "symptoms": "Folosește simptomele mașinii și statusul/Freeze Frame din raport.",
-            "causes": "Nu schimba o piesă doar pe baza codului. Verifică alimentare, masă, siguranțe, cablaj, conectori și valorile live ale sistemului înainte de înlocuire.",
-            "component": "De stabilit după textul exact al DTC-ului, modul și codul motor.",
-            "location": "De confirmat după model/generație/motor.",
-            "parameters": "În modulul care a raportat eroarea: Advanced Measuring Values / Measuring Blocks; caută numele senzorului/actuatorului din DTC și valorile specified/actual.",
-            "expected": "Nu există o valoare universală. Folosește limitele controllerului și comparația specified vs actual.",
-            "test_path": f"[{fault.module_address or 'modul'} - {fault.module_name}] > [Fault Codes] > [Advanced Measuring Values] / [Output Tests] / [Basic Settings] numai dacă sunt relevante.",
-            "diagnosis": "1) Salvează Auto-Scan-ul. 2) Notează dacă eroarea este statică sau intermitentă și Freeze Frame. 3) Verifică tensiunea bateriei. 4) Inspectează cablajul/conectorii. 5) Verifică valorile live. 6) Folosește Output Tests/Basic Settings doar dacă procedura controllerului o cere. 7) Repară cauza, șterge DTC și repetă Auto-Scan.",
-            "repair": "Fișa exactă trebuie adăugată în baza KID Diagnostic înainte de a recomanda înlocuirea unei piese.",
-            "replacement": "Nu se recomandă înlocuirea automată a unei piese pentru un DTC neindexat.",
-            "severity": "De evaluat",
-            "verified": False,
-        })
-    return base
-
-
-def compare_results(before, after):
-    b = {f.key: f for f in before.faults}
-    a = {f.key: f for f in after.faults}
-    resolved = [b[k] for k in b.keys() - a.keys()]
-    remaining = [a[k] for k in b.keys() & a.keys()]
-    new = [a[k] for k in a.keys() - b.keys()]
-    return resolved, remaining, new
+        return {
+            "found": True,
+            "verified": bool(row["verified"]),
+            "title": row["title"] or fault.title,
+            "description": row["description"] or "",
+            "symptoms": row["symptoms"] or "",
+            "causes": row["causes"] or "",
+            "component": row["component"] or "",
+            "location": row["component_location"] or "",
+            "parameters": row["vcds_parameters"] or "",
+            "expected": row["expected_values"] or "",
+            "test_path": row["test_path"] or "",
+            "diagnosis": row["diagnosis"] or "",
+            "repair": row["repair"] or "",
+            "replacement": row["replacement_steps"] or "",
+            "severity": row["severity"] or "",
+            "status": fault.status,
+            "freeze_frame": fault.freeze_frame,
+        }
+    return {
+        "found": False,
+        "verified": False,
+        "title": fault.title or (fault.code or fault.vag_code),
+        "description": "Cod identificat în Auto-Scan, dar fără fișă locală completă. Nu se inventează o procedură.",
+        "symptoms": "",
+        "causes": "Confirmă textul exact VCDS, controllerul, platforma și codul motor înainte de diagnostic.",
+        "component": "De confirmat după documentația controllerului exact.",
+        "location": "",
+        "parameters": "Folosește Advanced Measuring Values / Measuring Blocks relevante sistemului raportor.",
+        "expected": "Compară cu specificația de fabrică pentru platforma și motorul selectat.",
+        "test_path": f"VCDS > Address {fault.module_address} > Fault Codes / Advanced Measuring Values",
+        "diagnosis": "1) Salvează Auto-Scan complet. 2) Notează Freeze Frame. 3) Verifică alimentări, conectori și cablaj. 4) Măsoară parametrii live relevanți. 5) Repară cauza și repetă scanarea.",
+        "repair": "Repară numai cauza confirmată prin măsurători/documentație.",
+        "replacement": "După înlocuire: coding/adaptation/basic setting numai dacă procedura oficială pentru controllerul exact o cere; apoi test și Auto-Scan final.",
+        "severity": "Nespecificat",
+        "status": fault.status,
+        "freeze_frame": fault.freeze_frame,
+    }
