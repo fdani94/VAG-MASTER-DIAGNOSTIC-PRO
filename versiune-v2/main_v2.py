@@ -129,7 +129,10 @@ def apply_v2_patches():
     from v2_vehicle_first_patch import apply as p16
     from v2_220_title_compat_patch import apply as p17
     from v2_vehicle_scan_sync_patch import apply as p18
-    p1(); p2(); p3(); p4(); p5(); p6(); p7(); p8(); p9(); p10(); p11(); p12(); p13(); p14(); p15(); p16(); p17(); p18()
+    from v2_vehicle_precision_patch import apply as p19
+    from v2_layout_breathing_patch import apply as p20
+    from v2_222_title_compat_patch import apply as p21
+    p1(); p2(); p3(); p4(); p5(); p6(); p7(); p8(); p9(); p10(); p11(); p12(); p13(); p14(); p15(); p16(); p17(); p18(); p19(); p20(); p21()
 
 
 if __name__ == "__main__":
