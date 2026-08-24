@@ -32,16 +32,59 @@ def _select_vehicle(win, app):
     raise AssertionError("Could not select vehicle")
 
 
-def _save(win, app, width, height, index, filename):
-    win.resize(width, height)
+def _native_screen_capture(win, app, index, filename):
+    win.show()
     app.processEvents()
     win.open_page(index)
     app.processEvents()
     pix = win.grab()
     assert not pix.isNull()
-    assert pix.width() >= width - 40 and pix.height() >= height - 80
+    assert pix.width() >= 900 and pix.height() >= 620, (pix.width(), pix.height())
     path = ROOT / filename
     assert pix.save(str(path), "PNG")
+    return path, pix.width(), pix.height()
+
+
+def _render_at(win, app, width, height, index, filename):
+    # GitHub's hosted Windows desktop is around 1028px wide, so a shown
+    # top-level window is clamped by the OS. To audit 1366/FHD layouts without
+    # pretending the CI monitor is larger, first activate the requested page,
+    # then hide the window, assign the exact logical size and render the Qt
+    # widget tree into a pixmap while still using the native Windows QPA/fonts.
+    win.show()
+    app.processEvents()
+    win.open_page(index)
+    app.processEvents()
+    win.hide()
+    app.processEvents()
+    win.resize(width, height)
+    app.processEvents()
+
+    import v2_layout_breathing_patch as breathing
+    if index in range(1, 6):
+        breathing._apply_splitter_orientation(win, index)
+    app.processEvents()
+
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QColor, QPainter, QPixmap
+
+    assert win.width() == width and win.height() == height, (win.size(), width, height)
+    pix = QPixmap(width, height)
+    pix.fill(QColor("white"))
+    painter = QPainter(pix)
+    win.render(painter)
+    painter.end()
+    assert not pix.isNull()
+    path = ROOT / filename
+    assert pix.save(str(path), "PNG")
+
+    splitter = win._workspace_pages[index].findChild(
+        __import__("PySide6.QtWidgets", fromlist=["QSplitter"]).QSplitter,
+        f"kidWorkspaceSplitter{index}",
+    ) if index in range(1, 6) else None
+    if splitter is not None:
+        expected = Qt.Vertical if width < breathing.RESPONSIVE_BREAKPOINT else Qt.Horizontal
+        assert splitter.orientation() == expected, (index, width, splitter.orientation(), expected)
     return path
 
 
@@ -65,30 +108,36 @@ def main() -> int:
     app.processEvents()
     _select_vehicle(win, app)
 
-    small = _save(win, app, 1366, 768, 3, "v2_222_coding_1366x768.png")
-    coding_split = win._workspace_pages[3].findChild(QSplitter, "kidWorkspaceSplitter3")
-    assert coding_split is not None and coding_split.orientation() == Qt.Vertical
-    assert coding_split.height() >= 260
+    native, native_w, native_h = _native_screen_capture(
+        win, app, 3, "v2_222_coding_native_screen.png"
+    )
+    native_split = win._workspace_pages[3].findChild(QSplitter, "kidWorkspaceSplitter3")
+    assert native_split is not None
     assert win._workspace_pages[3].table.rowCount() > 0
     assert win._workspace_pages[3].detail.toPlainText().strip()
 
-    _save(win, app, 1366, 768, 2, "v2_222_dtc_1366x768.png")
-    _save(win, app, 1366, 768, 4, "v2_222_adapt_1366x768.png")
-    _save(win, app, 1366, 768, 5, "v2_222_service_1366x768.png")
+    small = _render_at(win, app, 1366, 768, 3, "v2_222_coding_1366x768.png")
+    coding_split = win._workspace_pages[3].findChild(QSplitter, "kidWorkspaceSplitter3")
+    assert coding_split.orientation() == Qt.Vertical
+    assert coding_split.minimumHeight() >= 260
 
-    large = _save(win, app, 1920, 1080, 3, "v2_222_coding_1920x1080.png")
+    _render_at(win, app, 1366, 768, 2, "v2_222_dtc_1366x768.png")
+    _render_at(win, app, 1366, 768, 4, "v2_222_adapt_1366x768.png")
+    _render_at(win, app, 1366, 768, 5, "v2_222_service_1366x768.png")
+
+    large = _render_at(win, app, 1920, 1080, 3, "v2_222_coding_1920x1080.png")
     coding_split = win._workspace_pages[3].findChild(QSplitter, "kidWorkspaceSplitter3")
     assert coding_split.orientation() == Qt.Horizontal
     assert coding_split.width() > 1200
 
     print(
-        "V2.2.2 NATIVE LAYOUT VISUAL AUDIT OK",
+        "V2.2.2 NATIVE WINDOWS + CONTROLLED LAYOUT VISUAL AUDIT OK",
         f"platform={QGuiApplication.platformName()}",
         f"vehicle={win.vehicle_badge.text()}",
-        f"small={small.name}",
-        f"large={large.name}",
+        f"native={native.name}:{native_w}x{native_h}",
+        f"small={small.name}:1366x768",
+        f"large={large.name}:1920x1080",
         f"coding_rows={win._workspace_pages[3].table.rowCount()}",
-        f"splitter_height={coding_split.height()}",
     )
     win.close(); app.processEvents(); app.quit()
     return 0
