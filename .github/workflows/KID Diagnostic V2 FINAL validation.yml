@@ -1,4 +1,4 @@
-name: KID Diagnostic V2.2.2 FINAL Audit
+name: KID Diagnostic V2.3.0 FINAL Audit
 
 on:
   workflow_dispatch:
@@ -24,13 +24,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: kid-v2-222-final-${{ github.event.pull_request.number || github.ref }}
+  group: kid-v2-230-final-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  final-v2-222:
+  final-v2-230:
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 65
 
     steps:
       - name: Checkout exact commit
@@ -48,7 +48,7 @@ jobs:
           python -m pip install --disable-pip-version-check pyinstaller==6.22.2 pillow
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Compile complete V2.2.2 stack
+      - name: Compile complete V2.3.0 stack
         shell: powershell
         run: |
           python -m py_compile autoscan_parser.py ui_autoscan_pdf_export.py `
@@ -66,12 +66,14 @@ jobs:
             versiune-v2/v2_vehicle_first_patch.py versiune-v2/v2_220_title_compat_patch.py `
             versiune-v2/v2_vehicle_scan_sync_patch.py versiune-v2/v2_vehicle_precision_patch.py `
             versiune-v2/v2_layout_breathing_patch.py versiune-v2/v2_222_title_compat_patch.py `
+            versiune-v2/v2_module_replacement.py versiune-v2/v2_module_replacement_patch.py `
+            versiune-v2/v2_230_title_patch.py versiune-v2/test_v2_module_replacement.py `
             versiune-v2/test_v2_vehicle_first.py versiune-v2/test_v2_vehicle_precision.py `
             versiune-v2/test_v2_layout_breathing.py `
             versiune-v2/v2_ai_functional_validation.py versiune-v2/v2_ai_hardening_validation.py `
             versiune-v2/v2_vehicle_first_validation.py versiune-v2/v2_final_validation_221.py `
             versiune-v2/v2_native_visual_validation.py versiune-v2/v2_layout_visual_validation.py `
-            versiune-v2/v2_compiled_smoke.py
+            versiune-v2/v2_module_replacement_visual_validation.py versiune-v2/v2_compiled_smoke.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Auto-Scan parser regressions
@@ -90,7 +92,7 @@ jobs:
           python versiune-v2/test_v2_ai_hardening.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Vehicle-first and precision adversarial regressions
+      - name: Vehicle-first precision and layout adversarial regressions
         shell: powershell
         env:
           QT_QPA_PLATFORM: offscreen
@@ -99,13 +101,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python versiune-v2/test_v2_vehicle_precision.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python versiune-v2/test_v2_layout_breathing.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: V2.2.2 workspace spacing regressions
+      - name: V2.3.0 module replacement coding recovery regressions
         shell: powershell
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
-          python versiune-v2/test_v2_layout_breathing.py
+          python versiune-v2/test_v2_module_replacement.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Full UI AI lifecycle and authoritative integration
@@ -122,13 +126,15 @@ jobs:
           python versiune-v2/v2_final_validation_221.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Native Windows font and layout visual audit
+      - name: Native Windows font layout and Coding Recovery visual audit
         shell: powershell
         run: |
           Remove-Item Env:QT_QPA_PLATFORM -ErrorAction SilentlyContinue
           python versiune-v2/v2_native_visual_validation.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python versiune-v2/v2_layout_visual_validation.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python versiune-v2/v2_module_replacement_visual_validation.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Create KID Diagnostic V2 icon
@@ -154,11 +160,11 @@ jobs:
           box=d.textbbox((0,0),'DIAGNOSTIC',font=f2)
           d.text(((S-(box[2]-box[0]))//2,385),'DIAGNOSTIC',font=f2,fill=(42,137,203,255))
           im.save('kid_diagnostic_v2.ico', sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])
-          '@ | Set-Content make_v2_222_icon.py
-          python make_v2_222_icon.py
+          '@ | Set-Content make_v2_230_icon.py
+          python make_v2_230_icon.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Build exact V2.2.2 Windows executable
+      - name: Build exact V2.3.0 Windows executable
         shell: powershell
         run: |
           pyinstaller --noconfirm --clean --onefile --windowed `
@@ -192,12 +198,15 @@ jobs:
             --hidden-import v2_vehicle_precision_patch `
             --hidden-import v2_layout_breathing_patch `
             --hidden-import v2_222_title_compat_patch `
+            --hidden-import v2_module_replacement `
+            --hidden-import v2_module_replacement_patch `
+            --hidden-import v2_230_title_patch `
             --collect-all pypdf `
             --collect-all reportlab `
             versiune-v2/main_v2.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $exe = Get-Item "dist\KID-Diagnostic-V2-AI.exe"
-          if ($exe.Length -lt 10000000) { throw "EXE V2.2.2 pare invalid: $($exe.Length) bytes" }
+          if ($exe.Length -lt 10000000) { throw "EXE V2.3.0 pare invalid: $($exe.Length) bytes" }
 
       - name: Audit PyInstaller critical modules
         shell: powershell
@@ -208,8 +217,9 @@ jobs:
             "ui_v2","v2_runtime_db","v2_ai_copilot","v2_ai_ui_patch","v2_ai_pdf_patch",
             "v2_ai_hardening_patch","v2_ai_shutdown_patch","v2_ai_language_safety_patch",
             "v2_vehicle_first_patch","v2_vehicle_scan_sync_patch","v2_vehicle_precision_patch",
-            "v2_layout_breathing_patch","v2_222_title_compat_patch",
-            "v2_integrated_navigation_patch","v2_functional_windows_patch"
+            "v2_layout_breathing_patch","v2_222_title_compat_patch","v2_module_replacement",
+            "v2_module_replacement_patch","v2_230_title_patch","v2_integrated_navigation_patch",
+            "v2_functional_windows_patch"
           )
           foreach ($module in $critical) {
             $escaped = [regex]::Escape($module)
@@ -234,7 +244,7 @@ jobs:
         run: |
           $p = Start-Process -FilePath "dist\KID-Diagnostic-V2-AI.exe" -PassThru
           Start-Sleep -Seconds 15
-          if ($p.HasExited) { throw "EXE V2.2.2 s-a închis prematur cu cod $($p.ExitCode)" }
+          if ($p.HasExited) { throw "EXE V2.3.0 s-a închis prematur cu cod $($p.ExitCode)" }
           Stop-Process -Id $p.Id -Force
 
       - name: Ensure Inno Setup
@@ -244,37 +254,38 @@ jobs:
           if (-not (Test-Path $iscc)) { choco install innosetup --no-progress -y }
           if (-not (Test-Path $iscc)) { throw "Inno Setup nu este disponibil." }
 
-      - name: Build V2.2.2 installer
+      - name: Build V2.3.0 installer
         shell: powershell
-        run: '& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" versiune-v2\installer_v2_ai_222.iss'
+        run: '& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" versiune-v2\installer_v2_ai_230.iss'
 
       - name: Verify final hashes
         shell: powershell
         run: |
           $exe = Resolve-Path "dist\KID-Diagnostic-V2-AI.exe"
-          $setup = Resolve-Path "versiune-v2\dist-v2-installer\KID-Diagnostic-V2-AI-v2.2.2-Setup.exe"
-          if ((Get-Item $setup).Length -lt 10000000) { throw "Installer V2.2.2 pare invalid." }
+          $setup = Resolve-Path "versiune-v2\dist-v2-installer\KID-Diagnostic-V2-AI-v2.3.0-Setup.exe"
+          if ((Get-Item $setup).Length -lt 10000000) { throw "Installer V2.3.0 pare invalid." }
           $exeHash = Get-FileHash $exe -Algorithm SHA256
           $setupHash = Get-FileHash $setup -Algorithm SHA256
           @(
-            "$($exeHash.Hash)  KID-Diagnostic-V2-AI-v2.2.2.exe",
-            "$($setupHash.Hash)  KID-Diagnostic-V2-AI-v2.2.2-Setup.exe"
-          ) | Set-Content -Encoding ASCII "SHA256SUMS-KID-V2-AI-v2.2.2.txt"
-          Copy-Item $exe "KID-Diagnostic-V2-AI-v2.2.2.exe"
-          Get-Content "SHA256SUMS-KID-V2-AI-v2.2.2.txt"
+            "$($exeHash.Hash)  KID-Diagnostic-V2-AI-v2.3.0.exe",
+            "$($setupHash.Hash)  KID-Diagnostic-V2-AI-v2.3.0-Setup.exe"
+          ) | Set-Content -Encoding ASCII "SHA256SUMS-KID-V2-AI-v2.3.0.txt"
+          Copy-Item $exe "KID-Diagnostic-V2-AI-v2.3.0.exe"
+          Get-Content "SHA256SUMS-KID-V2-AI-v2.3.0.txt"
 
-      - name: Upload authoritative audited V2.2.2 package
+      - name: Upload authoritative audited V2.3.0 package
         uses: actions/upload-artifact@v6
         with:
-          name: KID-DIAGNOSTIC-V2-AI-V2-2-2-LAYOUT-AUDIT
+          name: KID-DIAGNOSTIC-V2-AI-V2-3-0-CODING-RECOVERY-AUDIT
           retention-days: 14
           if-no-files-found: error
           path: |
-            KID-Diagnostic-V2-AI-v2.2.2.exe
-            versiune-v2/dist-v2-installer/KID-Diagnostic-V2-AI-v2.2.2-Setup.exe
-            SHA256SUMS-KID-V2-AI-v2.2.2.txt
+            KID-Diagnostic-V2-AI-v2.3.0.exe
+            versiune-v2/dist-v2-installer/KID-Diagnostic-V2-AI-v2.3.0-Setup.exe
+            SHA256SUMS-KID-V2-AI-v2.3.0.txt
             build/KID-Diagnostic-V2-AI/warn-KID-Diagnostic-V2-AI.txt
             v2_221_native_*.png
             v2_222_*.png
+            v2_230_*.png
             KID_Diagnostic_V2_AI_TEST.pdf
             KID_Diagnostic_V2_221_FINAL_TEST.pdf
