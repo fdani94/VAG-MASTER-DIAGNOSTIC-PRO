@@ -65,14 +65,14 @@ def _render_at(win, app, width, height, index, filename):
         breathing._apply_splitter_orientation(win, index)
     app.processEvents()
 
-    from PySide6.QtCore import Qt
+    from PySide6.QtCore import QPoint, Qt
     from PySide6.QtGui import QColor, QPainter, QPixmap
 
     assert win.width() == width and win.height() == height, (win.size(), width, height)
     pix = QPixmap(width, height)
     pix.fill(QColor("white"))
     painter = QPainter(pix)
-    win.render(painter)
+    win.render(painter, QPoint(0, 0))
     painter.end()
     assert not pix.isNull()
     path = ROOT / filename
