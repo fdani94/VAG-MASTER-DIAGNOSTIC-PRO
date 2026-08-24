@@ -86,7 +86,8 @@ class VehicleFirstV220Tests(unittest.TestCase):
         self.assertTrue(ctx["engine_id"])
         self.assertTrue(ctx["engine_code"])
         self.assertIn(ctx["engine_code"], self.window.vehicle_badge.text())
-        self.assertIn("2.2.1", self.window.windowTitle())
+        self.assertIn("2.3.0", self.window.windowTitle())
+        self.assertIn("Coding Recovery", self.window.windowTitle())
 
     def test_all_workspaces_receive_same_vehicle_context(self):
         self._select_golf_vii()
