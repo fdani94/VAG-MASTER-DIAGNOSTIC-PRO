@@ -1,0 +1,353 @@
+name: Build KID Diagnostic V2 Windows EXE
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/v2-modern-dashboard
+    paths:
+      - "versiune-v2/**"
+      - "*.py"
+      - "requirements.txt"
+      - ".github/workflows/KID Diagnostic V2 build.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "versiune-v2/**"
+      - "*.py"
+      - "requirements.txt"
+      - ".github/workflows/KID Diagnostic V2 build.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  build-v2:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller==6.21.0 pillow
+
+      - name: Create KID Diagnostic icon
+        shell: powershell
+        run: |
+          @'
+          from PIL import Image, ImageDraw, ImageFont
+          S=512
+          im=Image.new('RGBA',(S,S),(235,244,250,255))
+          d=ImageDraw.Draw(im)
+          d.rounded_rectangle((18,18,S-18,S-18), radius=105, fill=(255,255,255,255), outline=(66,151,217,255), width=18)
+          d.rounded_rectangle((105,150,407,255), radius=45, outline=(45,148,220,255), width=12)
+          d.line((150,150,205,105,310,105,362,150), fill=(71,116,150,255), width=12)
+          d.ellipse((125,225,185,285), fill=(242,248,252,255), outline=(40,142,215,255), width=8)
+          d.ellipse((327,225,387,285), fill=(242,248,252,255), outline=(40,142,215,255), width=8)
+          try:
+              f1=ImageFont.truetype('C:/Windows/Fonts/arialbd.ttf',105)
+              f2=ImageFont.truetype('C:/Windows/Fonts/arialbd.ttf',42)
+          except:
+              f1=f2=None
+          box=d.textbbox((0,0),'KID',font=f1)
+          d.text(((S-(box[2]-box[0]))//2,278),'KID',font=f1,fill=(28,63,91,255),stroke_width=2,stroke_fill=(94,171,224,255))
+          box=d.textbbox((0,0),'DIAGNOSTIC',font=f2)
+          d.text(((S-(box[2]-box[0]))//2,385),'DIAGNOSTIC',font=f2,fill=(42,137,203,255))
+          im.save('kid_diagnostic_v2.ico', sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])
+          '@ | Set-Content make_v2_icon.py
+          python make_v2_icon.py
+
+      - name: Validate V2 source
+        id: validate
+        continue-on-error: true
+        run: |
+          python -m py_compile versiune-v2/main_v2.py versiune-v2/ui_v2.py versiune-v2/dtc_reference_index_pack.py versiune-v2/obd_reference_index_pack.py versiune-v2/v2_diagnostic_patch.py versiune-v2/v2_ui_runtime_patch.py versiune-v2/v2_master_ui_patch.py versiune-v2/v2_visual_fix.py versiune-v2/v2_redesign_patch.py versiune-v2/v2_responsive_windows_patch.py versiune-v2/v2_functional_windows_patch.py autoscan_parser.py ui_autoscan_pdf_export.py
+
+      - name: Functional test all V2 windows and actions
+        id: smoke
+        continue-on-error: true
+        shell: powershell
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          @'
+          import sys
+          from pathlib import Path
+
+          root = Path.cwd(); v2 = root / 'versiune-v2'
+          sys.path.insert(0, str(root)); sys.path.insert(0, str(v2))
+          import main_v2
+          main_v2.prepare_database()
+
+          from v2_diagnostic_patch import apply as p1
+          from v2_ui_runtime_patch import apply as p2
+          from v2_master_ui_patch import apply as p3
+          from v2_visual_fix import apply as p4
+          from v2_redesign_patch import apply as p5
+          from v2_responsive_windows_patch import apply as p6
+          from v2_functional_windows_patch import apply as p7
+          p1(); p2(); p3(); p4(); p5(); p6(); p7()
+
+          from PySide6.QtWidgets import QApplication, QMessageBox, QPushButton
+          from PySide6.QtGui import QFont
+          import ui_v2
+          import v2_functional_windows_patch as fp
+          from ui_v2 import MainWindowV2
+
+          app = QApplication([]); app.setFont(QFont('Arial', 10))
+          QMessageBox.warning = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Ok)
+          QMessageBox.information = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Ok)
+          QMessageBox.critical = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Ok)
+
+          win = MainWindowV2(); win.show(); app.processEvents()
+          assert win.stack.count() == 1
+          assert len(win._workspace_pages) == 8
+          assert win.minimumWidth() <= 800 and win.minimumHeight() <= 600
+
+          # Responsive dashboard at common resolutions.
+          sizes = [(800,600,2,2),(1024,700,2,2),(1366,768,3,4),(1600,900,4,4)]
+          for width,height,card_cols,stat_cols in sizes:
+              win.resize(width,height); app.processEvents()
+              win._responsive_dashboard.reflow(width - 44); app.processEvents()
+              assert int(win._responsive_dashboard.property('responsiveColumns')) == card_cols
+              assert int(win._responsive_dashboard.property('responsiveStatColumns')) == stat_cols
+              shot = win.grab(); assert shot.save(f'v2_ui_{width}x{height}.png','PNG')
+
+          # Exercise the real vehicle selector and confirmation button.
+          chosen = False
+          for bi in range(1, win.brand_combo.count()):
+              win.brand_combo.setCurrentIndex(bi); app.processEvents()
+              for mi in range(1, win.model_combo.count()):
+                  win.model_combo.setCurrentIndex(mi); app.processEvents()
+                  if win.gen_combo.count() > 1:
+                      win.gen_combo.setCurrentIndex(1); app.processEvents(); chosen = True; break
+              if chosen: break
+          assert chosen
+          confirm = next(b for b in win.findChildren(QPushButton) if b.text() == 'CONFIRMĂ VEHICULUL')
+          confirm.click(); app.processEvents()
+          assert win.selected_generation_id is not None
+
+          # Pick a generation that has both workshop procedures and module maps,
+          # then verify the three procedure windows really return usable rows.
+          candidates = win.con.execute('''
+              SELECT vp.generation_id, COUNT(*) AS c
+              FROM vehicle_procedures vp
+              WHERE EXISTS (SELECT 1 FROM generation_modules gm WHERE gm.generation_id=vp.generation_id)
+              GROUP BY vp.generation_id ORDER BY c DESC LIMIT 120
+          ''').fetchall()
+          functional_gid = None
+          for row in candidates:
+              gid = row['generation_id']
+              win.selected_generation_id = gid
+              h = ui_v2.db.vehicle_header(win.con, gid)
+              win.selected_year = h['year_from']
+              ok = True
+              for idx in (3,4,5):
+                  page = win._workspace_pages[idx]
+                  page.search.clear(); win._load_procedures(page); app.processEvents()
+                  if page.table.rowCount() <= 0:
+                      ok = False; break
+              win._load_modules(); app.processEvents()
+              if ok and win.module_table.rowCount() > 0:
+                  functional_gid = gid; break
+          assert functional_gid is not None, 'No generation with functional procedures/modules was found'
+          win.selected_generation_id = functional_gid
+
+          # Real sample Auto-Scan: click the actual button, parse a DTC and render
+          # its diagnostic detail in the Auto-Scan window.
+          sample = root / 'sample_vcds_autoscan.txt'
+          sample.write_text('''
+VIN: WVWZZZ1KZ6W000001
+Address 01: Engine
+1 Fault Found:
+000665 - Boost Pressure Regulation
+P0299 - 000 - Control Range Not Reached - Intermittent
+Fault Frequency: 3
+Mileage: 188000 km
+'''.strip(), encoding='utf-8')
+          pdf_path = root / 'functional_v2_report.pdf'
+          fp.QFileDialog.getOpenFileName = staticmethod(lambda *a, **k: (str(sample), 'Text (*.txt)'))
+          fp.QFileDialog.getSaveFileName = staticmethod(lambda *a, **k: (str(pdf_path), 'PDF (*.pdf)'))
+
+          # Open all eight windows from the actual dashboard card buttons.
+          cards = win.findChildren(ui_v2.FeatureCard)
+          assert len(cards) == 8
+          opened = set()
+          for card in cards:
+              btn = next(b for b in card.findChildren(QPushButton) if b.objectName() == 'cardButton')
+              btn.click(); app.processEvents()
+              visible = [i for i,w in win._workspace_windows.items() if w.isVisible()]
+              assert visible, f'No workspace opened for card {card}'
+              idx = visible[-1]; opened.add(idx)
+              workspace = win._workspace_windows[idx]
+              assert workspace.centralWidget() is win._workspace_pages[idx]
+              assert workspace.minimumWidth() <= 800 and workspace.minimumHeight() <= 600
+              win.show_dashboard(); app.processEvents()
+          assert opened == set(range(1,9))
+
+          # Auto-Scan functional controls.
+          win.open_page(1); app.processEvents()
+          auto_page = win._workspace_pages[1]
+          load_btn = next(b for b in auto_page.findChildren(QPushButton) if b.text().startswith('Încarcă Auto-Scan'))
+          load_btn.click(); app.processEvents()
+          assert win.current_autoscan is not None
+          assert len(win.autoscan_plans) >= 1
+          assert win.autoscan_table.rowCount() >= 1
+          assert win.autoscan_detail.toPlainText().strip()
+          plan_btn = next(b for b in auto_page.findChildren(QPushButton) if b.text().startswith('Plan diagnostic'))
+          plan_btn.click(); app.processEvents()
+          assert win.autoscan_detail.toPlainText().strip()
+          pdf_btn = next(b for b in auto_page.findChildren(QPushButton) if 'raport PDF' in b.text())
+          pdf_btn.click(); app.processEvents()
+          assert pdf_path.exists() and pdf_path.stat().st_size > 1500
+          win.show_dashboard(); app.processEvents()
+
+          # DTC window must contain rows and detail immediately after opening.
+          win.open_page(2); app.processEvents()
+          assert win.dtc_table.rowCount() > 0
+          assert win.dtc_detail.toPlainText().strip()
+          win.dtc_search.setText('P0299'); app.processEvents()
+          assert win.dtc_table.rowCount() > 0
+          win.show_dashboard(); app.processEvents()
+
+          # Coding / Adaptation / Service windows must show real procedure rows
+          # and auto-select a detail record.
+          for idx in (3,4,5):
+              win.open_page(idx); app.processEvents()
+              page = win._workspace_pages[idx]
+              assert page.table.rowCount() > 0, f'workspace {idx} has no procedures'
+              assert page.detail.toPlainText().strip(), f'workspace {idx} has no detail'
+              win.show_dashboard(); app.processEvents()
+
+          # Live Data and module pages must populate from the local database.
+          win.open_page(6); app.processEvents()
+          assert win.live_table.rowCount() > 0
+          win.live_search.setText('EGR'); app.processEvents()
+          assert win.live_table.rowCount() >= 0
+          win.show_dashboard(); app.processEvents()
+
+          win.open_page(7); app.processEvents()
+          assert win.module_table.rowCount() > 0
+          win.show_dashboard(); app.processEvents()
+
+          # Reports window: click its real generation button using the same loaded
+          # Auto-Scan; a valid PDF must remain on disk.
+          win.open_page(8); app.processEvents()
+          report_page = win._workspace_pages[8]
+          report_btn = next(b for b in report_page.findChildren(QPushButton) if 'Generează' in b.text())
+          report_btn.click(); app.processEvents()
+          assert pdf_path.exists() and pdf_path.stat().st_size > 1500
+          win.show_dashboard(); app.processEvents()
+
+          # Back button from an actual workspace must return to the dashboard.
+          win.open_page(2); app.processEvents()
+          back = next(b for b in win._workspace_windows[2].findChildren(QPushButton) if b.objectName() == 'backButton')
+          back.click(); app.processEvents(); assert win.isVisible()
+
+          print('FUNCTIONAL V2 TEST OK', 'workspaces=', sorted(opened), 'autoscan=', len(win.autoscan_plans), 'pdf=', pdf_path.stat().st_size)
+          for w in list(win._workspace_windows.values()): w.hide()
+          win.close(); app.quit()
+          '@ | Set-Content functional_v2_ui.py
+          python functional_v2_ui.py
+
+      - name: Upload responsive UI previews
+        if: steps.smoke.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: KID-Diagnostic-V2-UI-Responsive-Previews
+          path: v2_ui_*.png
+          if-no-files-found: error
+
+      - name: Build V2 executable
+        id: build
+        continue-on-error: true
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed --name KID-Diagnostic-V2 --icon kid_diagnostic_v2.ico --paths . --paths versiune-v2 --hidden-import ui_v2 --hidden-import dtc_reference_index_pack --hidden-import obd_reference_index_pack --hidden-import v2_diagnostic_patch --hidden-import v2_ui_runtime_patch --hidden-import v2_master_ui_patch --hidden-import v2_visual_fix --hidden-import v2_redesign_patch --hidden-import v2_responsive_windows_patch --hidden-import v2_functional_windows_patch --collect-all pypdf versiune-v2/main_v2.py
+
+      - name: Verify executable
+        id: verify
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
+        shell: powershell
+        run: |
+          if (-not (Test-Path "dist\KID-Diagnostic-V2.exe")) { exit 1 }
+          $file = Get-Item "dist\KID-Diagnostic-V2.exe"
+          Write-Host "EXE: $($file.FullName)"
+          Write-Host "SIZE: $($file.Length) bytes"
+
+      - name: Verify packaged EXE starts
+        id: exestart
+        if: steps.verify.outcome == 'success'
+        continue-on-error: true
+        shell: powershell
+        run: |
+          $env:QT_QPA_PLATFORM = "offscreen"
+          $p = Start-Process -FilePath "dist\KID-Diagnostic-V2.exe" -PassThru
+          Start-Sleep -Seconds 20
+          if ($p.HasExited) {
+            Write-Host "Packaged EXE exited early with code $($p.ExitCode)"
+            exit 1
+          }
+          Stop-Process -Id $p.Id -Force
+          Write-Host "Packaged EXE remained alive after startup validation."
+
+      - name: Upload V2 Windows EXE
+        if: steps.verify.outcome == 'success' && steps.smoke.outcome == 'success' && steps.exestart.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: KID-Diagnostic-V2-Windows-FINAL
+          path: dist/KID-Diagnostic-V2.exe
+          if-no-files-found: error
+
+      - name: Publish build result into repository
+        if: always() && github.event_name == 'push'
+        shell: powershell
+        env:
+          VALIDATE_RESULT: ${{ steps.validate.outcome }}
+          SMOKE_RESULT: ${{ steps.smoke.outcome }}
+          BUILD_RESULT: ${{ steps.build.outcome }}
+          VERIFY_RESULT: ${{ steps.verify.outcome }}
+          EXESTART_RESULT: ${{ steps.exestart.outcome }}
+          SOURCE_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          @'
+          import os
+          from pathlib import Path
+          from datetime import datetime, timezone
+          validate=os.environ.get('VALIDATE_RESULT','unknown'); smoke=os.environ.get('SMOKE_RESULT','unknown')
+          build=os.environ.get('BUILD_RESULT','unknown'); verify=os.environ.get('VERIFY_RESULT','unknown')
+          exestart=os.environ.get('EXESTART_RESULT','unknown')
+          ok=validate==smoke==build==verify==exestart=='success'; status='SUCCESS' if ok else 'FAILED'
+          exe=Path('dist/KID-Diagnostic-V2.exe'); size=exe.stat().st_size if exe.exists() else 0
+          repo=os.environ.get('REPOSITORY','fdani94/VAG-MASTER-DIAGNOSTIC-PRO'); run_id=os.environ.get('RUN_ID','')
+          run_url=f'https://github.com/{repo}/actions/runs/{run_id}' if run_id else ''
+          text=f'''# KID Diagnostic V2 — Build Status\n\n**Status:** {status}\n\n- Source commit: `{os.environ.get("SOURCE_SHA","")}`\n- Validate source: **{validate}**\n- Functional windows/actions test: **{smoke}**\n- PyInstaller build: **{build}**\n- Verify EXE file: **{verify}**\n- Verify packaged EXE starts: **{exestart}**\n- Executable: `KID-Diagnostic-V2.exe`\n- EXE size: **{size} bytes**\n- Artifact: `KID-Diagnostic-V2-Windows-FINAL` (when status is SUCCESS)\n- Workflow run: {run_url}\n- Run attempt: {os.environ.get("RUN_ATTEMPT","")}\n- Updated UTC: {datetime.now(timezone.utc).isoformat(timespec="seconds")}\n'''
+          Path('versiune-v2/BUILD_STATUS.md').write_text(text,encoding='utf-8')
+          '@ | Set-Content write_build_status.py
+          python write_build_status.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- "versiune-v2/BUILD_STATUS.md"
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) {
+            git commit -m "Update V2 Windows build status [skip ci]"
+            git push
+          }
+
+      - name: Fail workflow when V2 build failed
+        if: always() && (steps.validate.outcome != 'success' || steps.smoke.outcome != 'success' || steps.build.outcome != 'success' || steps.verify.outcome != 'success' || steps.exestart.outcome != 'success')
+        shell: powershell
+        run: exit 1
